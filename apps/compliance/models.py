@@ -190,6 +190,14 @@ class TestRun(models.Model):
     )
     run_at = models.DateTimeField("когда выполнена", default=timezone.now)
     result = models.CharField("результат", max_length=10, choices=Result.choices)
+    evidence = models.ForeignKey(
+        "evidence.EvidenceObject",
+        verbose_name="основное доказательство",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="test_runs",
+    )
     notes = models.TextField("заметки", blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -213,12 +221,21 @@ class TestRun(models.Model):
         implementation = ControlImplementation.objects.filter(
             control=self.test.control, system=self.system
         ).first()
-        if implementation is None:
-            return
-        implementation.last_test_at = self.run_at
-        implementation.next_due_at = (
-            self.run_at + timedelta(days=self.test.frequency_days)
-            if self.test.frequency_days
-            else None
-        )
-        implementation.save(update_fields=["last_test_at", "next_due_at"])
+        if implementation is not None:
+            implementation.last_test_at = self.run_at
+            implementation.next_due_at = (
+                self.run_at + timedelta(days=self.test.frequency_days)
+                if self.test.frequency_days
+                else None
+            )
+            implementation.save(update_fields=["last_test_at", "next_due_at"])
+        if self.evidence_id:
+            # Основное доказательство прогона = связь role=proof (SDD §3.3)
+            from apps.evidence.models import EvidenceLink  # локальный импорт: без циклов
+
+            EvidenceLink.objects.get_or_create(
+                evidence_id=self.evidence_id,
+                entity_type="test_run",
+                entity_id=self.pk,
+                role=EvidenceLink.Role.PROOF,
+            )

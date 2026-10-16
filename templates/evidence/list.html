@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Evidence{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Evidence (доказательства)</h1>
+  {% if can_edit %}
+    <a class="btn btn-primary btn-sm" href="{% url 'evidence:upload' %}">Загрузить evidence</a>
+  {% endif %}
+</div>
+<p class="text-secondary mb-3">
+  <a href="{% url 'evidence:expiring' %}">Истекает в ближайшие 30 дней →</a>
+  <a href="{% url 'compliance:matrix' %}">Контроли →</a>
+</p>
+
+<form method="get" class="d-flex gap-2 mb-3">
+  <select name="kind" class="form-select form-select-sm w-auto">
+    <option value="">Все виды</option>
+    {% for value, label in kinds %}
+      <option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-sm btn-outline-secondary" type="submit">Показать</button>
+</form>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>Название</th><th>Вид</th><th>Письмо</th><th>Размер</th><th>Действует до</th><th>Загружено</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for e in objects %}
+          <tr>
+            <td><a href="{% url 'evidence:detail' e.pk %}">{{ e.title }}</a></td>
+            <td>{{ e.get_kind_display }}</td>
+            <td>
+              {% if e.letter_direction %}
+                {{ e.get_letter_direction_display }} №{{ e.letter_number }} от {{ e.letter_date|date:"d.m.Y" }}{% if e.correspondent %}, {{ e.correspondent }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>{{ e.size|filesizeformat }}</td>
+            <td>{{ e.valid_until|date:"d.m.Y"|default:"—" }}</td>
+            <td>{{ e.created_at|date:"d.m.Y H:i" }}</td>
+            <td class="text-end">
+              {% if may_download %}
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'evidence:download' e.pk %}">Скачать</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-secondary">Evidence пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

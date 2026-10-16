@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ object.title }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">{{ object.title }}</h1>
+<p class="text-secondary mb-3">
+  <a href="{% url 'evidence:list' %}">← Evidence</a>
+  {% if may_download %}
+    <a href="{% url 'evidence:download' object.pk %}">Скачать файл ↓</a>
+  {% endif %}
+</p>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Вид</dt><dd class="col-sm-9">{{ object.get_kind_display }}</dd>
+      <dt class="col-sm-3">Файл</dt><dd class="col-sm-9">{{ object.filename }} · {{ object.size|filesizeformat }} · sha256 <code>{{ object.sha256 }}</code></dd>
+      <dt class="col-sm-3">Конфиденциальность</dt><dd class="col-sm-9">{{ object.get_confidentiality_display }}</dd>
+      {% if object.letter_direction %}
+        <dt class="col-sm-3">Письмо</dt>
+        <dd class="col-sm-9">
+          {{ object.get_letter_direction_display }} №{{ object.letter_number }}
+          от {{ object.letter_date|date:"d.m.Y" }}{% if object.correspondent %}, {{ object.correspondent }}{% endif %}
+          {% if object.reply_due_at %}· ответ до {{ object.reply_due_at|date:"d.m.Y" }}{% endif %}
+          {% if object.reply_status %}· {{ object.get_reply_status_display }}{% endif %}
+        </dd>
+      {% endif %}
+      <dt class="col-sm-3">Действует до</dt><dd class="col-sm-9">{{ object.valid_until|date:"d.m.Y"|default:"бессрочно" }}</dd>
+      <dt class="col-sm-3">Загрузил</dt><dd class="col-sm-9">{{ object.uploaded_by|default:"—" }}</dd>
+    </dl>
+  </div>
+</div>
+
+<h2 class="h5">Связи с объектами</h2>
+<div class="card shadow-sm mb-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Объект</th><th>ID</th><th>Роль</th></tr></thead>
+      <tbody>
+        {% for link in links %}
+          <tr>
+            <td>{{ link.get_entity_type_display }}</td>
+            <td>{{ link.entity_id }}</td>
+            <td>{{ link.get_role_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="text-secondary">Связей нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if can_edit %}
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h3 class="h6">Добавить связь</h3>
+      <form method="post" action="{% url 'evidence:link_add' object.pk %}" novalidate>
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="btn btn-primary btn-sm" type="submit">Связать</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Evidence: истечение{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Evidence истекает</h1>
+<p class="text-secondary mb-3">
+  Показаны документы с заполненной датой «действует до» не позже {{ limit|date:"d.m.Y" }}.
+  <a href="{% url 'evidence:list' %}">← Evidence</a>
+</p>
+
+<form method="get" class="d-flex gap-2 mb-3">
+  <input type="number" name="days" value="{{ days }}" min="1" max="365" class="form-control form-control-sm w-auto">
+  <button class="btn btn-sm btn-outline-secondary" type="submit">дней вперёд</button>
+</form>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Название</th><th>Вид</th><th>Действует до</th><th>Дней осталось</th></tr></thead>
+      <tbody>
+        {% for e in objects %}
+          <tr>
+            <td><a href="{% url 'evidence:detail' e.pk %}">{{ e.title }}</a></td>
+            <td>{{ e.get_kind_display }}</td>
+            <td>{{ e.valid_until|date:"d.m.Y" }}</td>
+            <td>{{ e.valid_until|timeuntil }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="text-secondary">Ничего не истекает в выбранном окне.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

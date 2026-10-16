@@ -1,5 +1,8 @@
 """Настройки для pytest: быстрые хэши, locmem-почта, eager-задачи. Только вымышленные данные."""
 
+import tempfile
+from pathlib import Path
+
 from .base import *  # noqa: F403
 
 DEBUG = False
@@ -12,3 +15,10 @@ CELERY_TASK_EAGER_PROPAGATES = True
 REGISTRY_OPEN_ACCESS = False
 # Дополнительные источники пассивных данных включаются только в тестах, где они нужны
 MIKROTIK_EXTRA_ROUTERS = []
+
+# Evidence: локальное хранилище во временном каталоге — тесты не зависят от .env и S3
+MEDIA_ROOT = Path(tempfile.mkdtemp(prefix="secops-evidence-"))
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}

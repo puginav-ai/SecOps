@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.registry",
     "apps.discovery",
     "apps.compliance",
+    "apps.evidence",
 ]
 
 MIDDLEWARE = [
@@ -96,6 +97,28 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+
+# Файловое хранилище evidence (неделя 5): по умолчанию локальное, в проде — S3 (SeaweedFS).
+MEDIA_ROOT = BASE_DIR / "media"
+EVIDENCE_STORAGE_BACKEND = env("EVIDENCE_STORAGE", "django.core.files.storage.FileSystemStorage")
+STORAGES = {
+    "default": {"BACKEND": EVIDENCE_STORAGE_BACKEND},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+AWS_ACCESS_KEY_ID = env("S3_ACCESS_KEY", "")
+AWS_SECRET_ACCESS_KEY = env("S3_SECRET_KEY", "")
+AWS_STORAGE_BUCKET_NAME = env("S3_BUCKET", "evidence")
+AWS_S3_ENDPOINT_URL = env("S3_ENDPOINT", "")
+AWS_S3_REGION_NAME = env("S3_REGION", "us-east-1")
+AWS_DEFAULT_ACL = None
+AWS_QUERYSTRING_AUTH = True
+
+# Ограничения загрузки evidence (SDD §5.4)
+EVIDENCE_MAX_MB = env_int("EVIDENCE_MAX_MB", 100)
+EVIDENCE_ALLOWED_EXTENSIONS = env_list(
+    "EVIDENCE_ALLOWED_EXTENSIONS",
+    "pdf,doc,docx,odt,rtf,txt,csv,xlsx,ods,xml,json,png,jpg,jpeg,zip,rar,7z,cfg,log",
+)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Загрузка evidence{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Загрузка evidence</h1>
+<p class="text-secondary mb-3">
+  <a href="{% url 'evidence:list' %}">← Evidence</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Загрузить</button>
+      <a class="btn btn-outline-secondary" href="{% url 'evidence:list' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+
+<p class="text-secondary small mt-3 mb-0">
+  Белый список типов и лимит размера — из настроек. Для письма обязательны направление, номер и дата;
+  при загрузке считается sha256 — он же используется в отчётах и связях.
+</p>
+{% endblock %}

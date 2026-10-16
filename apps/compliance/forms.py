@@ -40,7 +40,7 @@ class TestRunForm(forms.ModelForm):
 
     class Meta:
         model = TestRun
-        fields = ["test", "run_at", "result", "notes"]
+        fields = ["test", "run_at", "result", "evidence", "notes"]
 
     def __init__(
         self, *args, implementation: ControlImplementation | None = None, **kwargs
