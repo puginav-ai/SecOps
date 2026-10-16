@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Закрытие обязательства{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Закрытие: {{ instance.template.name }}</h1>
+<p class="text-secondary mb-3">
+  Срок {{ instance.due_at|date:"d.m.Y" }} · {{ instance.template.get_kind_display }}
+  {% if instance.template.requires_closing_evidence %}· <span class="badge text-bg-danger">нужно evidence</span>{% endif %}
+  · <a href="{% url 'obligations:list' %}">← Обязательства</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Отметить выполненным</button>
+      <a class="btn btn-outline-secondary" href="{% url 'obligations:list' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

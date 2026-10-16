@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Мои уведомления{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Мои уведомления</h1>
+<p class="text-secondary mb-3">
+  Напоминания и эскалации по обязательствам (каналы: в приложении и почта).
+  <a href="{% url 'obligations:list' %}">Обязательства →</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Когда</th><th>Канал</th><th>Вид</th><th>Текст</th></tr></thead>
+      <tbody>
+        {% for n in notifications %}
+          <tr>
+            <td class="text-nowrap">{{ n.created_at|date:"d.m.Y H:i" }}</td>
+            <td>{{ n.get_channel_display }}</td>
+            <td>{{ n.kind }}</td>
+            <td>{{ n.message }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="text-secondary">Уведомлений пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

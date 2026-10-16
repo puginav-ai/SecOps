@@ -11,5 +11,7 @@ urlpatterns = [
     path("registry/", include("apps.registry.urls")),
     path("compliance/", include("apps.compliance.urls")),
     path("evidence/", include("apps.evidence.urls")),
+    path("obligations/", include("apps.obligations.urls")),
+    path("notifications/", include("apps.notifications.urls")),
     path("", include("apps.core.urls")),
 ]

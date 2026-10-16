@@ -26,6 +26,8 @@ INSTALLED_APPS = [
     "apps.discovery",
     "apps.compliance",
     "apps.evidence",
+    "apps.obligations",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
@@ -166,6 +168,11 @@ CELERY_BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     "scan-due-segments": {
         "task": "apps.discovery.tasks.scan_due_segments",
         "schedule": crontab(minute="*/30"),
+    },
+    # Утро буднего дня: материализация обязательств, статусы, напоминания 30/7/1, эскалации
+    "obligations-daily": {
+        "task": "apps.obligations.tasks.daily_obligations",
+        "schedule": crontab(hour=8, minute=5),
     },
 }
 

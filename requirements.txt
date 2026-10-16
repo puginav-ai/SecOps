@@ -9,3 +9,4 @@ gunicorn~=23.0
 tzdata>=2024.1
 librouteros~=3.4  # RouterOS API для пассивного discovery с Mikrotik (чистый Python, узкая задача)
 django-storages[s3]~=1.14  # S3-хранилище evidence (SeaweedFS) — только через штатный storage-контракт
+python-dateutil~=2.9  # RRULE-генерация обязательств (SDD §3.5)

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Обязательства{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Обязательства и сроки</h1>
+<p class="text-secondary mb-3">
+  Шаблонов: {{ templates_count }} · напоминания за 30/7/1 дней · эскалации при просрочке.
+  <a href="{% url 'compliance:matrix' %}">Контроли →</a>
+  <a href="{% url 'notifications:list' %}">Мои уведомления →</a>
+</p>
+
+{% if overdue %}
+  <h2 class="h5 text-danger">Просрочено ({{ overdue|length }})</h2>
+  <div class="card shadow-sm mb-4"><div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Срок</th><th>Обязательство</th><th>Владелец</th><th>Эскалация</th><th></th></tr></thead>
+      <tbody>
+        {% for item in overdue %}
+          <tr class="table-danger">
+            <td>{{ item.due_at|date:"d.m.Y" }}</td>
+            <td><strong>{{ item.template.name }}</strong> <span class="badge text-bg-light border">{{ item.template.get_kind_display }}</span></td>
+            <td>{{ item.owner_person|default:"—" }}</td>
+            <td>{% if item.escalation_level %}шаг {{ item.escalation_level }}{% else %}—{% endif %}</td>
+            <td class="text-end">
+              <a class="btn btn-outline-primary btn-sm" href="{% url 'obligations:close' item.pk %}">Выполнить</a>
+              <form method="post" action="{% url 'obligations:cancel' item.pk %}" class="d-inline">
+                {% csrf_token %}<button class="btn btn-outline-secondary btn-sm" type="submit">Отменить</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+{% endif %}
+
+<h2 class="h5">Скоро срок и план ({{ soon|length }} / {{ planned|length }})</h2>
+<div class="card shadow-sm mb-4"><div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Срок</th><th>Обязательство</th><th>Владелец</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+      {% for item in soon %}
+        <tr class="table-warning">
+          <td>{{ item.due_at|date:"d.m.Y" }}</td>
+          <td><strong>{{ item.template.name }}</strong> <span class="badge text-bg-light border">{{ item.template.get_kind_display }}</span></td>
+          <td>{{ item.owner_person|default:"—" }}</td>
+          <td>{{ item.get_status_display }}</td>
+          <td class="text-end">
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'obligations:close' item.pk %}">Выполнить</a>
+            <form method="post" action="{% url 'obligations:cancel' item.pk %}" class="d-inline">
+              {% csrf_token %}<button class="btn btn-outline-secondary btn-sm" type="submit">Отменить</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      {% for item in planned %}
+        <tr>
+          <td>{{ item.due_at|date:"d.m.Y" }}</td>
+          <td><strong>{{ item.template.name }}</strong> <span class="badge text-bg-light border">{{ item.template.get_kind_display }}</span></td>
+          <td>{{ item.owner_person|default:"—" }}</td>
+          <td>{{ item.get_status_display }}</td>
+          <td class="text-end">
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'obligations:close' item.pk %}">Выполнить</a>
+            <form method="post" action="{% url 'obligations:cancel' item.pk %}" class="d-inline">
+              {% csrf_token %}<button class="btn btn-outline-secondary btn-sm" type="submit">Отменить</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        {% if not soon %}<tr><td colspan="5" class="text-secondary">Активных обязательств нет — beat материализует их по шаблонам.</td></tr>{% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<h2 class="h5">Недавно закрытые</h2>
+<div class="card shadow-sm"><div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Срок</th><th>Обязательство</th><th>Владелец</th><th>Статус</th><th>Закрыто</th></tr></thead>
+    <tbody>
+      {% for item in recent_closed %}
+        <tr>
+          <td>{{ item.due_at|date:"d.m.Y" }}</td>
+          <td>{{ item.template.name }}</td>
+          <td>{{ item.owner_person|default:"—" }}</td>
+          <td>{{ item.get_status_display }}</td>
+          <td>{{ item.closed_at|date:"d.m.Y H:i" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="text-secondary">Пока ничего не закрывалось.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}
