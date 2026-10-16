@@ -45,3 +45,16 @@ def env_int(name: str, default: int) -> int:
 
 def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in env(name, default).split(",") if item.strip()]
+
+
+def env_json(name: str, default: list | dict):
+    """JSON-значение из окружения (например, список роутеров). Пусто → default."""
+    import json
+
+    raw = env(name, "")
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name}: ожидается JSON ({exc})") from exc

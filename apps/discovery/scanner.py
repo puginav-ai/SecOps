@@ -1,4 +1,4 @@
-"""Сбор наблюдений сегмента: ICMP-sweep, порт-скан по профилю и пассивный сбор с Mikrotik.
+"""Сбор наблюдений сегмента: ICMP-sweep, порт-скан по профилю и пассивный сбор с роутеров.
 
 Внешние вызовы — collector.runner.run_nmap и collector.mikrotik.fetch_router_data
 (оба подменяются в тестах).
@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 from django.conf import settings
 
 from apps.registry.models import Segment
-from collector.mikrotik import RouterData, arp_hosts, fetch_router_data, merge_observations
+from collector.mikrotik import arp_hosts, fetch_router_data, merge_observations
 from collector.nmap import (
     ObservedHost,
     build_service_args,
@@ -24,23 +25,49 @@ from collector.runner import run_nmap
 logger = logging.getLogger(__name__)
 
 
-def passive_hosts(segment: Segment) -> tuple[list[ObservedHost], RouterData | None]:
-    """Узлы из ARP роутера в подсети сегмента. Роутер не настроен/недоступен → пусто."""
-    if not settings.MIKROTIK_HOST:
-        return [], None
-    try:
-        data = fetch_router_data(
+def _router_sources() -> list[tuple[str, str, str, bool]]:
+    """Настроенные источники пассивных данных: основной роутер + дополнительные (JSON-список)."""
+    sources = [
+        (
             settings.MIKROTIK_HOST,
             settings.MIKROTIK_API_USER,
             settings.MIKROTIK_API_PASSWORD,
-            use_ssl=settings.MIKROTIK_API_SSL,
+            settings.MIKROTIK_API_SSL,
         )
-    except Exception:  # сетевой сбой не должен валить скан: сегмент сканируется как раньше
-        logger.exception(
-            "mikrotik api unavailable", extra={"segment_id": segment.pk, "cidr": segment.cidr}
+    ]
+    for router in settings.MIKROTIK_EXTRA_ROUTERS:
+        sources.append(
+            (
+                str(router.get("host", "")),
+                str(router.get("user", "admin")),
+                str(router.get("password", "")),
+                False,
+            )
         )
-        return [], None
-    return arp_hosts(data.arp, segment.cidr), data
+    return sources
+
+
+def passive_hosts(segment: Segment) -> tuple[list[ObservedHost], list[Mapping[str, str]]]:
+    """ARP-наблюдения всех настроенных роутеров в подсети сегмента + DHCP-аренды для имён.
+
+    Недоступный роутер скан не валит: пишется лог, источник пропускается.
+    """
+    hosts: list[ObservedHost] = []
+    leases: list[Mapping[str, str]] = []
+    for host, user, password, use_ssl in _router_sources():
+        if not host:
+            continue
+        try:
+            data = fetch_router_data(host, user, password, use_ssl=use_ssl)
+        except Exception:
+            logger.exception(
+                "mikrotik api unavailable",
+                extra={"segment_id": segment.pk, "cidr": segment.cidr, "host": host},
+            )
+            continue
+        hosts.extend(arp_hosts(data.arp, segment.cidr))
+        leases.extend(data.leases)
+    return hosts, leases
 
 
 def collect_observations(segment: Segment) -> list[ObservedHost]:
@@ -57,7 +84,7 @@ def collect_observations(segment: Segment) -> list[ObservedHost]:
         # узел, «потерянный» при детальном скане, остаётся живым из свипа
         alive = [detailed.get(host.ip, host) for host in alive]
 
-    passive, data = passive_hosts(segment)
+    passive, leases = passive_hosts(segment)
     if passive:
-        alive = merge_observations(alive, passive, data.leases if data else ())
+        alive = merge_observations(alive, passive, leases)
     return alive

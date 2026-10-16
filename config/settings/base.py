@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from celery.schedules import crontab
 
-from config.env import BASE_DIR, env, env_int, env_list, load_dotenv
+from config.env import BASE_DIR, env, env_int, env_json, env_list, load_dotenv
 
 load_dotenv()
 
@@ -88,7 +88,7 @@ PASSWORD_HASHERS = [
 ]
 
 LANGUAGE_CODE = "ru-ru"
-TIME_ZONE = "Europe/Moscow"
+TIME_ZONE = "Asia/Yekaterinburg"  # часовой пояс больницы (роутеры настроены на UTC+5)
 USE_I18N = True
 USE_TZ = True
 
@@ -127,6 +127,9 @@ MIKROTIK_HOST = env("MIKROTIK_HOST", "")
 MIKROTIK_API_USER = env("MIKROTIK_API_USER", "admin")
 MIKROTIK_API_PASSWORD = env("MIKROTIK_API_PASSWORD", "")
 MIKROTIK_API_SSL = env("MIKROTIK_API_SSL", "0") != "0"
+# Дополнительные источники пассивных данных (в т.ч. «маленькие» роутеры):
+# JSON-список [{"host": "10.0.2.2", "user": "secops", "password": "..."}]. Пусто → только основной.
+MIKROTIK_EXTRA_ROUTERS = env_json("MIKROTIK_EXTRA_ROUTERS", [])
 
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
 CELERY_BROKER_URL = REDIS_URL

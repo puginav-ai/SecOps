@@ -186,3 +186,25 @@ def test_scan_skips_router_when_not_configured(segment: Segment, monkeypatch, se
 
     assert tasks.scan_segment(segment.pk)["status"] == "ok"
     assert Asset.objects.count() == 2
+
+
+@freeze_time("2026-10-12 09:30:00+03:00")
+def test_scan_merges_extra_router_arp(segment: Segment, monkeypatch, settings) -> None:
+    """Пассивные данные берутся и со второго настроенного роутера (например, КПЦ)."""
+    settings.MIKROTIK_HOST = "192.0.2.2"
+    settings.MIKROTIK_EXTRA_ROUTERS = [{"host": "192.0.2.9", "user": "u", "password": "p"}]
+    patch_nmap(monkeypatch, [SWEEP_XML])
+
+    def fake(host: str, *args, **kwargs) -> RouterData:
+        if host == "192.0.2.9":
+            return RouterData(arp=({"address": "10.60.1.99", "mac-address": "AA:BB:CC:00:00:99"},))
+        return RouterData(arp=({"address": "10.60.1.11", "mac-address": "AA:BB:CC:00:00:11"},))
+
+    monkeypatch.setattr("apps.discovery.scanner.fetch_router_data", fake)
+
+    result = tasks.scan_segment(segment.pk)
+
+    assert result["status"] == "ok"
+    assert (result["seen"], result["new"]) == (3, 3)
+    assert Asset.objects.get(ip="10.60.1.99").mac == "aa:bb:cc:00:00:99"  # узел от второго роутера
+    assert Asset.objects.get(ip="10.60.1.11").mac == "aa:bb:cc:00:00:11"  # MAC от основного

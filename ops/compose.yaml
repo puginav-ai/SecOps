@@ -19,7 +19,7 @@ x-app: &app
   env_file: ../.env
   environment:
     DJANGO_SETTINGS_MODULE: config.settings.prod
-    TZ: Europe/Moscow
+    TZ: Asia/Yekaterinburg
   depends_on:
     postgres:
       condition: service_healthy
