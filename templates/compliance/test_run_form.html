@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Проверка: {{ implementation.control.code }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Проверка контроля</h1>
+<p class="text-secondary mb-3">
+  <code>{{ implementation.control.code }}</code> {{ implementation.control.name }} ·
+  ИС «{{ implementation.system }}» ·
+  <a href="{% url 'compliance:matrix' %}">← Матрица</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Зафиксировать</button>
+      <a class="btn btn-outline-secondary" href="{% url 'compliance:matrix' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+
+<p class="text-secondary small mt-3 mb-0">
+  При сохранении пересчитывается дата следующей проверки: дата выполнения + периодичность проверки.
+</p>
+{% endblock %}

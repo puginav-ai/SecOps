@@ -80,6 +80,10 @@ def user_roles(user) -> set[str]:
     return set(user.groups.values_list("name", flat=True))
 
 
+# Роли, которым виден весь реестр (без фильтра «только свои ИС», SDD §4)
+FULL_REGISTRY_ROLES = {"ib_admin", "ib_officer", "it_ops", "reader"}
+
+
 def module_access(user, module: str) -> str:
     """Итоговый доступ к модулю: максимум по ролям; суперпользователь — «rw» везде."""
     if not user.is_authenticated:

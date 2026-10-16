@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.registry",
     "apps.discovery",
+    "apps.compliance",
 ]
 
 MIDDLEWARE = [

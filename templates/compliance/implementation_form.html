@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Контроль: {{ implementation.control.code }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">{{ implementation.control.code }} — {{ implementation.control.name }}</h1>
+<p class="text-secondary mb-3">
+  ИС «{{ implementation.system }}» ·
+  <a href="{% url 'compliance:matrix' %}">← Матрица</a> ·
+  <a href="{% url 'compliance:test_run_create' implementation.pk %}">Зафиксировать проверку →</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Сохранить</button>
+      <a class="btn btn-outline-secondary" href="{% url 'compliance:matrix' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+
+{% if implementation.last_test_at %}
+  <p class="text-secondary small mt-3 mb-0">
+    Последняя проверка: {{ implementation.last_test_at|date:"d.m.Y H:i" }};
+    следующая: {{ implementation.next_due_at|date:"d.m.Y H:i"|default:"—" }}.
+  </p>
+{% else %}
+  <p class="text-secondary small mt-3 mb-0">
+    Проверок ещё не было — перевести в «подтверждено» не получится, пока не зафиксирована проверка.
+  </p>
+{% endif %}
+{% endblock %}

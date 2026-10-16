@@ -10,14 +10,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.core.access import module_access, role_required, user_roles
+from apps.core.access import FULL_REGISTRY_ROLES, module_access, role_required, user_roles
 from apps.discovery.services import MISS_THRESHOLD
 from apps.registry.forms import PersonForm, SegmentForm, SystemComponentForm, SystemForm
 from apps.registry.models import Asset, Person, Segment, System, SystemComponent
 
 NEW_ASSETS_HOURS = 24
-# Роли, которым виден весь реестр ИС (у «system_owner» — только свои ИС, SDD §4)
-FULL_REGISTRY_ROLES = {"ib_admin", "ib_officer", "it_ops", "reader"}
 
 
 @role_required("registry")

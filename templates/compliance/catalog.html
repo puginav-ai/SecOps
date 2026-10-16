@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Каталог НПА и контролей{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Каталог: НПА → требования → контроли</h1>
+<p class="text-secondary mb-3">
+  <a href="{% url 'compliance:matrix' %}">← Матрица «ИС × контроль»</a>
+</p>
+
+{% for act in acts %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <h2 class="h5">{{ act.name }} {% if act.version %}<span class="text-secondary">({{ act.version }})</span>{% endif %}</h2>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Пункт</th><th>Требование</th><th>Контроли</th></tr></thead>
+        <tbody>
+          {% for req in act.requirements.all %}
+            <tr>
+              <td class="text-nowrap">{{ req.clause }}</td>
+              <td>{{ req.text }}</td>
+              <td>
+                {% for link in req.control_links.all %}
+                  <span class="badge text-bg-light border">{{ link.control.code }}</span>
+                {% empty %}
+                  —
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% empty %}
+  <p class="text-secondary">Каталог пуст.</p>
+{% endfor %}
+
+<h2 class="h5 mt-4">Контроли (топ-15) и проверки</h2>
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>Код</th><th>Контроль</th><th>Домен</th><th>Проверки</th></tr>
+      </thead>
+      <tbody>
+        {% for c in controls %}
+          <tr>
+            <td><code>{{ c.code }}</code></td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.get_domain_display }}</td>
+            <td>
+              {% for t in c.tests.all %}
+                <div>
+                  {{ t.get_test_type_display }}
+                  {% if t.frequency_days %}· раз в {{ t.frequency_days }} дн.{% endif %}
+                  {% if t.frequency_days %}{% else %}· по событию{% endif %}
+                  {% if t.is_mandatory %}· <span class="badge text-bg-danger">обязательна</span>{% endif %}
+                  {% if t.pass_criteria %}<span class="text-secondary small">— {{ t.pass_criteria }}</span>{% endif %}
+                </div>
+              {% empty %}
+                —
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

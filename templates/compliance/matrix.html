@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Матрица «ИС × контроль»{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Матрица «ИС × контроль»</h1>
+  {% if gap_only %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'compliance:matrix' %}">Показать все контроли</a>
+  {% else %}
+    <a class="btn btn-warning btn-sm" href="{% url 'compliance:matrix' %}?gap=1">Только пробелы (не внедрено / не подтверждено)</a>
+  {% endif %}
+</div>
+<p class="text-secondary mb-3">
+  Статусы: неприменимо · запланировано · внедрено · подтверждено · не соответствует · внешняя зависимость · исключение.
+  <a href="{% url 'compliance:catalog' %}">Каталог НПА и контролей →</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th class="text-nowrap">Контроль</th>
+          {% for s in systems %}<th class="text-nowrap">{{ s.name }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              <span class="text-nowrap"><code>{{ row.control.code }}</code> {{ row.control.name }}</span><br>
+              <span class="text-secondary small">{{ row.control.get_domain_display }}</span>
+            </td>
+            {% for cell in row.cells %}
+              <td>
+                {% if cell.impl %}
+                  {% if cell.impl.is_applicable %}
+                    {% if cell.impl.status == "verified" %}
+                      <span class="badge text-bg-success">подтверждено</span>
+                    {% elif cell.impl.status == "implemented" %}
+                      <span class="badge text-bg-info">внедрено</span>
+                    {% elif cell.impl.status == "planned" %}
+                      <span class="badge text-bg-secondary">запланировано</span>
+                    {% elif cell.impl.status == "non_compliant" %}
+                      <span class="badge text-bg-danger">не соответствует</span>
+                    {% elif cell.impl.status == "external" %}
+                      <span class="badge text-bg-warning">внешняя</span>
+                    {% elif cell.impl.status == "exception" %}
+                      <span class="badge text-bg-dark">исключение</span>
+                    {% else %}
+                      {{ cell.impl.get_status_display }}
+                    {% endif %}
+                  {% else %}
+                    <span class="text-secondary small">не применимо</span>
+                  {% endif %}
+                  {% if can_edit %}
+                    <div class="mt-1">
+                      <a class="btn btn-outline-secondary btn-sm py-0" href="{% url 'compliance:implementation_edit' cell.impl.pk %}">изм.</a>
+                      <a class="btn btn-outline-primary btn-sm py-0" href="{% url 'compliance:test_run_create' cell.impl.pk %}">тест</a>
+                    </div>
+                  {% endif %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="20" class="text-secondary">Пробелов нет — либо матрица ещё не заполнена.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
