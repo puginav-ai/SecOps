@@ -1,0 +1,9 @@
+[Unit]
+Description=SecOps GRC backup (pg_dump + MinIO mirror)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/grc
+ExecStart=/opt/grc/ops/backup.sh

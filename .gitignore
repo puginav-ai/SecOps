@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Django
+*.sqlite3
+media/
+staticfiles/
+local_settings.py
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# OS
+.DS_Store
+*.swp

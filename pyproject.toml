@@ -1,0 +1,36 @@
+[project]
+name = "secops-grc"
+version = "0.1.0"
+description = "GRC-консоль для больницы (on-prem): реестр ИС/активов, контроли, evidence, обязательства, КЗИ, инциденты"
+requires-python = ">=3.12"
+# Зависимости — в requirements*.txt (Docker-first, см. README).
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]          # assert — норма в тестах
+"apps/*/tests/**" = ["S101"]
+"conftest.py" = ["S101", "S105"]  # assert + вымышленный пароль фикстур
+"config/settings/*" = ["F403", "F405"]  # стандартный `from .base import *`
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+testpaths = ["tests", "apps"]
+addopts = "--strict-markers -ra --cov=apps --cov=collector --cov=config --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+omit = [
+    "config/settings/*",
+    "config/wsgi.py",
+    "*/migrations/*",
+    "manage.py",
+]
+
+[tool.coverage.report]
+show_missing = true

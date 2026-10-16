@@ -1,0 +1,35 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Пульт ИБ{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
+  <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
+  <script src="{% static 'vendor/alpine.min.js' %}" defer></script>
+</head>
+<body class="bg-body-tertiary">
+<nav class="navbar navbar-expand bg-dark" data-bs-theme="dark">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/">Пульт ИБ</a>
+    <div class="navbar-nav ms-auto align-items-center">
+      {% if user.is_authenticated %}
+        <span class="navbar-text me-3">{{ user.get_full_name|default:user.username }}</span>
+        <form method="post" action="{% url 'logout' %}" class="d-inline">
+          {% csrf_token %}
+          <button class="btn btn-outline-light btn-sm" type="submit">Выйти</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+<main class="container py-4">
+  {% for message in messages %}
+    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'secondary' }}{% endif %}">
+      {{ message }}
+    </div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

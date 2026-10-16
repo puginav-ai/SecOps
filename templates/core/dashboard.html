@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Дашборд</h1>
+<p class="text-secondary mb-4">
+  Роли:
+  {% for r in roles %}<span class="badge text-bg-secondary me-1">{{ r }}</span>{% empty %}не назначены{% endfor %}
+</p>
+
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+  {% for m in modules %}
+    <div class="col">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <h2 class="h6 mb-0">{{ m.title }}</h2>
+            <span class="badge {{ m.access|yesno:"text-bg-success,text-bg-secondary" }}">{{ m.access }}</span>
+          </div>
+          {% if m.url %}
+            <a class="small" href="{{ m.url }}">Открыть →</a>
+          {% else %}
+            <p class="small text-secondary mb-0">Раздел появится в следующих итерациях плана.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="col">
+      <div class="alert alert-secondary mb-0">
+        Роли не назначены — обратитесь к ИБ-админу.
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,113 @@
+"""Парсинг nmap XML и сборка аргументов скана в рамках бюджета (SDD §5.2).
+
+Только чистые функции: сетевые вызовы — в collector/runner.py.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+from dataclasses import dataclass
+from xml.etree import ElementTree as ET
+
+# Бюджет скана — SDD §5.2
+HOST_TIMEOUT = "10s"
+MAX_RATE = "100"  # pps
+TOP_PORTS = "100"
+CHUNK_PREFIX = 24
+
+
+@dataclass(frozen=True)
+class ObservedHost:
+    """Узел, увиденный коллектором. mac — нормализованный (нижний регистр, ':')."""
+
+    ip: str
+    mac: str | None = None
+    hostname: str = ""
+    os_name: str = ""
+    ports: tuple[int, ...] = ()
+    source: str = "nmap"
+
+
+def parse_nmap_xml(xml_text: str) -> list[ObservedHost]:
+    """XML nmap → список живых хостов. Битые порты/адреса пропускаются, хосты без IPv4 — тоже."""
+    # XML приходит от нашего же subprocess (nmap -oX), не из сети — S314 неактуален.
+    root = ET.fromstring(xml_text)  # noqa: S314
+    hosts: list[ObservedHost] = []
+    for host in root.findall("host"):
+        status = host.find("status")
+        if status is not None and status.get("state") != "up":
+            continue
+
+        ip, mac = "", None
+        for address in host.findall("address"):
+            addrtype = address.get("addrtype")
+            if addrtype == "ipv4":
+                ip = address.get("addr", "")
+            elif addrtype == "mac" and address.get("addr"):
+                mac = address.get("addr", "").lower()
+        if not ip:
+            continue
+        try:  # доверяем только валидным адресам
+            ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+
+        hostname_el = host.find("hostnames/hostname")
+        hostname = hostname_el.get("name", "") if hostname_el is not None else ""
+        os_el = host.find("os/osmatch")
+        os_name = os_el.get("name", "") if os_el is not None else ""
+
+        ports: list[int] = []
+        for port in host.findall("ports/port"):
+            state = port.find("state")
+            if state is None or state.get("state") != "open":
+                continue
+            try:
+                ports.append(int(port.get("portid", "")))
+            except ValueError:
+                continue
+
+        hosts.append(
+            ObservedHost(
+                ip=ip,
+                mac=mac,
+                hostname=hostname,
+                os_name=os_name,
+                ports=tuple(sorted(ports)),
+            )
+        )
+    return hosts
+
+
+def chunk_cidr(cidr: str, prefix: int = CHUNK_PREFIX) -> list[str]:
+    """Делит подсеть на куски не крупнее /prefix. Подсеть мельче — как есть."""
+    network = ipaddress.ip_network(cidr, strict=False)
+    if network.prefixlen >= prefix:
+        return [str(network)]
+    return [str(subnet) for subnet in network.subnets(new_prefix=prefix)]
+
+
+def build_sweep_args(target: str) -> list[str]:
+    """ICMP/ping-sweep — аккуратно, без DNS: `-n` (в контуре DNS может отсутствовать),
+    умеренный темп T3. T2 здесь не годится: на /24 это минуты."""
+    return ["nmap", "-sn", "-n", "-T3", target]
+
+
+def build_service_args(targets: list[str]) -> list[str]:
+    """top-100 портов для живых узлов: бюджет host-timeout/max-rate (SDD §5.2), без DNS.
+
+    T3, а не T2: у T2 минимальная задержка 0.4 с на пробу, и top-100 не укладывается
+    в host-timeout 10 с (проверено). Темп ограничивает --max-rate 100 pps.
+    """
+    return [
+        "nmap",
+        "-n",
+        "-T3",
+        "--top-ports",
+        TOP_PORTS,
+        "--host-timeout",
+        HOST_TIMEOUT,
+        "--max-rate",
+        MAX_RATE,
+        *targets,
+    ]

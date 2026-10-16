@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">{{ title }}</h1>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Сохранить</button>
+      <a class="btn btn-outline-secondary" href="{% url 'registry:segment_list' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+
+<p class="text-secondary small mt-3 mb-0">
+  Скан выполняется только при включённом флаге и внутри окна; профиль «top-100» медленнее,
+  но даёт порты и отпечаток ОС.
+</p>
+{% endblock %}

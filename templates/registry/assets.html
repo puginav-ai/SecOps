@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Активы{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Активы</h1>
+<p class="text-secondary mb-3">
+  Результат discovery. <a href="{% url 'registry:segment_list' %}">← Сегменты</a>
+</p>
+
+<div class="row row-cols-1 row-cols-md-3 g-3 mb-4">
+  <div class="col">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-secondary small">Всего активов</div>
+      <div class="h4 mb-0">{{ total }}</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-secondary small">В сети (меньше {{ miss_threshold }} промахов)</div>
+      <div class="h4 mb-0">{{ active_total }}</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-secondary small">Новые за 24 ч</div>
+      <div class="h4 mb-0">{{ new_count }}</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <h2 class="h6">Распределение по площадкам</h2>
+      <table class="table table-sm mb-0">
+        {% for row in by_site %}
+          <tr><td>{{ row.site__name|default:"—" }}</td><td class="text-end">{{ row.total }}</td></tr>
+        {% empty %}
+          <tr><td class="text-secondary">пусто</td></tr>
+        {% endfor %}
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <h2 class="h6">Распределение по сегментам</h2>
+      <table class="table table-sm mb-0">
+        {% for row in by_segment %}
+          <tr><td>{{ row.segment__name|default:"—" }}</td><td class="text-end">{{ row.total }}</td></tr>
+        {% empty %}
+          <tr><td class="text-secondary">пусто</td></tr>
+        {% endfor %}
+      </table>
+    </div></div>
+  </div>
+</div>
+
+<form method="get" class="d-flex gap-2 mb-3">
+  <select name="segment" class="form-select form-select-sm w-auto">
+    <option value="">Все сегменты</option>
+    {% for s in segments %}
+      <option value="{{ s.pk }}" {% if segment and segment.pk == s.pk %}selected{% endif %}>{{ s.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-sm btn-outline-secondary" type="submit">Показать</button>
+</form>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>IP</th><th>MAC</th><th>Имя</th><th>Сегмент</th><th>Роль</th><th>Статус</th><th>Последний раз</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assets %}
+          <tr>
+            <td><code>{{ a.ip }}</code></td>
+            <td>{{ a.mac|default:"—" }}</td>
+            <td>{{ a.hostname|default:"—" }}</td>
+            <td>{{ a.segment|default:"—" }}</td>
+            <td>{{ a.get_device_role_display }}</td>
+            <td>
+              {% if a.miss_count >= miss_threshold %}
+                <span class="badge text-bg-danger">пропал</span>
+              {% elif a.pk in new_ids %}
+                <span class="badge text-bg-info">новый</span>
+              {% else %}
+                <span class="badge text-bg-success">в сети</span>
+              {% endif %}
+            </td>
+            <td>{{ a.last_seen_at|date:"d.m.Y H:i" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-secondary">Активов пока нет — включите скан на сегменте.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

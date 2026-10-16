@@ -1,0 +1,480 @@
+# SDD: Пульт управления информационной безопасностью (GRC-консоль)
+
+| | |
+|---|---|
+| Версия | 0.1 (черновик на утверждение) |
+| Дата | 2026-10-16 |
+| Источники | `SecOps-dev.txt` (черновик заказчика), ответы заказчика на уточняющие вопросы 2026-10-16 |
+| Статус | На утверждении; изменения — правкой этого документа (см. AGENTS.md) |
+
+**Зафиксированные решения (ответы заказчика):**
+
+1. Стек: Django + DRF + HTMX (монолит; отдельный `app-ui` не создаём — UI отдаёт Django, статика через nginx).
+2. Объём: полная спецификация на все модули; сборка — инкрементами по 12-недельному плану.
+3. Формула КЗИ: формула по умолчанию из этого документа (изолирована в одном модуле, утверждается при реализации).
+4. Каналы уведомлений: in-app, SMTP, Telegram, внутренний мессенджер — все четыре через единый интерфейс адаптеров; MVP включает in-app + SMTP, остальные — по мере готовности реквизитов.
+5. Discovery: пассивный сбор (SNMP/ARP/таблицы Mikrotik) + ping-sweep; активный nmap — только топ-100 портов,
+   `-T3` с бюджетом (host-timeout/max-rate), в согласованное окно, в пределах network scopes.
+6. Аутентификация: локальные учётки, логин/пароль, RBAC. 2FA (TOTP) — отложено, кандидат на фазу 2.
+
+---
+
+## 1. Контекст и цели
+
+Больница, 2 площадки. Нет AD/CMDB. Есть Mikrotik и Континент-4 (VPN). Часть контуров/СЗИ
+(SecretNet Studio + Dr.Web + РЕДОС/Астра) управляет министерство. Переписка с ФСТЭК по КИИ — бумага,
+доступа к СЭД края нет. Часть ИС (ЛИС, PACS, Аптека) — подрядные или смешанные.
+
+**Проблема:** состояние ИБ живёт в головах и файлах; нет единого реестра, доказательств, дедлайнов;
+невозможно быстро ответить «что у нас с контролем X по системе Y и чем это подтверждено».
+
+**Цель:** локальный on-prem пульт, который держит:
+
+1. Реестр ИС/активов и карту ответственности (включая учёт контуров министерства и подрядчиков).
+2. Цепочку «НПА → требование → контроль → проверка → доказательство» с периодикой.
+3. Обязательства с дедлайнами, напоминаниями 30/7/1 день и эскалациями.
+4. КЗИ/ПЗИ: ввод KPI, расчёт со снапшотами, «почему не 1», план мероприятий.
+5. Инциденты с таймерами уведомлений (1ч/T1/T2) и доказательствами отправки.
+6. Отчётность: дашборды по ролям, «неизвестные активы», покрытие evidence, 1-страничный отчёт руководству.
+
+**Метрики успеха (пилот на ЛИС/PACS/Аптека):** по 3 ИС закрыты базовые контроли с evidence;
+календарь обязательств генерируется на 12+ месяцев; КЗИ считается с объяснением; просрочки
+уведомлений видны и эскалируются.
+
+**Вне скоупа (осознанно):** SIEM, сканер уязвимостей, автоматический сбор из СЗИ (кроме файловых
+выгрузок), интеграция с AD (её нет), HA-кластер, мобильное приложение, публичный доступ из интернета.
+
+---
+
+## 2. Архитектура
+
+### 2.1. Диаграмма (To-Be)
+
+```text
+        админ-подсети / VPN (Континент-4)
+                     │  HTTPS
+              ┌──────▼──────┐
+              │    nginx    │  TLS, статика, reverse proxy
+              └──────┬──────┘
+              ┌──────▼──────┐
+              │  web (Django│  DRF API + HTMX-UI (gunicorn)
+              │   + DRF)    │
+              └─┬───┬───┬───┘
+        ┌───────┘   │   └────────────┐
+   ┌────▼─────┐ ┌───▼────┐  ┌────────▼────────┐  ┌──────────────┐
+   │ postgres │ │ redis  │  │ worker + beat   │  │  collector   │
+   │   16     │ │  7     │  │ (Celery)        │  │ (nmap/SNMP)  │
+   └──────────┘ └────────┘  └────────┬────────┘  └──────┬───────┘
+                                     │ S3 API           │ SNMP / API / ICMP / nmap
+                              ┌──────▼──────┐    ┌──────▼───────────────┐
+                              │  SeaweedFS  │    │ Mikrotik, подсети    │
+                              │ (evidence)  │    │ (только scopes из БД)│
+                              └─────────────┘    └──────────────────────┘
+```
+
+### 2.2. Компоненты
+
+| Компонент | Роль | Технология |
+|---|---|---|
+| `nginx` | TLS-терминация, статика, прокси | nginx (сертификаты внутреннего УЦ) |
+| `web` | UI (Django templates + HTMX) + REST API (DRF) | Django 5.x, gunicorn |
+| `worker` | периодические задачи: генерация обязательств, таймеры, уведомления, экспорт | Celery |
+| `beat` | расписание Celery — единственный планировщик | celery beat |
+| `collector` | discovery по scopes: SNMP/API Mikrotik, ping-sweep, аккуратный nmap | Python: librouteros, pysnmp, nmap (subprocess, XML), только в профиле `scan` |
+| `postgres` | основная БД | PostgreSQL 16 |
+| `redis` | брокер и результаты Celery | Redis 7 |
+| `s3` | S3-хранилище evidence | SeaweedFS (S3-совместимый) |
+| `prometheus/grafana` | мониторинг (опция, фаза 2) | — |
+
+> ADR (16.10.2026): MinIO прекратил свободную публикацию образов и бинарников, свободного MinIO
+> больше не существует. Замена — SeaweedFS: S3-совместимый, OSS, без изменения прикладного
+> контракта (S3 API / django-storages).
+
+**Почему монолит.** Команда маленькая, UI форм/таблиц/дашбордов; Django даёт auth, RBAC, админку,
+миграции, ORM. Отдельный SPA-фронтенд здесь — лишние сущности и стыки (см. AGENTS.md, ponytail).
+
+**Роли контейнеров.** `beat` — только один, в core-профиле; `collector` — Celery worker очереди `scan`
+(тот же образ, отдельный контейнер с `NET_RAW`). Если между площадками разные маршруты/ACL —
+коллектор поднимается по контейнеру на площадку тем же образом, с другим env.
+
+> ADR (16.10.2026, неделя 2): код discovery разделён на `collector/` (чистая логика — парсинг XML nmap,
+> окно скана, чанки/бюджет; тестируется без БД) и `apps/discovery` (модели `scan_runs`, задачи Celery,
+> upsert активов). Сервис `collector` в compose включается профилем `scan` (`make scan-up`), в образ
+> добавлен `nmap`; ICMP-sweep требует raw sockets, поэтому контейнер коллектора работает от root
+> с `NET_RAW` (без портов наружу и без томов). Задачи скана идут в очередь `scan`, «обычный» worker
+> её не слушает.
+
+### 2.3. Потоки данных (ключевые)
+
+1. **Discovery:** beat (единственный) → задание в очередь `scan` для collector по каждому `segment` (scope) в окне скана → сбор
+   (Mikrotik SNMP/API, ping, nmap top-100) → upsert `assets` → события дрейфа `asset_events` → отчёт «новые/пропавшие».
+2. **Проверка контроля:** владелец проходит тест → создаёт `test_run` (результат + evidence) →
+   пересчёт `last_test_at/next_due_at` контроля → при несоответствии — запись статуса `Non-compliant` + задача.
+3. **Обязательство:** beat ежедневно материализует `obligation_instances` на 12–18 мес → напоминания
+   за 30/7/1 день → просрочка → эскалация по политике шаблона → закрытие только с closing evidence (если требуется).
+4. **КЗИ:** создаётся `assessment` → ручной ввод `kpi_values` (обязательная привязка evidence) →
+   закрытие заблокировано при NULL в обязательных KPI → расчёт → снапшот в `details` → экран «почему не 1» → план мероприятий.
+5. **Инцидент:** регистрация → таймеры стадий (`incident_notifications`) → отправка по каналам →
+   evidence отправки → закрытие с разбором.
+
+---
+
+## 3. Модель данных
+
+Соглашения: `snake_case`; PK — bigint identity; время — `timestamptz` (хранение UTC, отображение МСК);
+денег нет; всё удаление — явное (`PROTECT` либо soft-delete только там, где указано).
+Справочники (НПА/требования/контроли, группы KPI, шаблоны обязательств, правила стадий инцидентов)
+наполняются `data migration` при первом запуске (недели 4–7 плана).
+
+### 3.1. Реестр
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `sites` | `id, name, address` | 2 площадки + виртуальные («внешний», «министерство») |
+| `segments` | `id, site_id, name, cidr, vlan, description, owner_person_id, scan_enabled, scan_profile, scan_window jsonb, last_scan_at` | = «Network scopes». `scan_profile ∈ ping|top100` (`full` — только отдельным решением); окно: дни недели/часы; скан по умолчанию выключен (включают осознанно). Только scopes отсюда попадают в скан |
+| `assets` | `id, ip inet, mac, hostname, os_family, os_name, site_id, segment_id, device_role, first_seen_at, last_seen_at, discovery_source, criticality, ports jsonb, fingerprint jsonb, miss_count, owner_person_id` | `ip` не уникален (история при переиспользовании IP); MAC может быть пустым. «Активный» = `miss_count < 3`. `device_role ∈ server|workstation|network|medical|printer|other|unknown` |
+| `asset_events` | `id, asset_id, kind, at, details jsonb` | дрейф: `new|disappeared|changed|ports_changed`; `details = {field: {from, to}}`, отслеживаем: ip, mac, hostname, os, ports, segment; возврат после пропажи — `new` с `reason=reappeared` |
+| `scan_runs` | `id, segment_id, started_at, finished_at, status, stats jsonb, triggered_by` | журнал запусков discovery; `status ∈ running|ok|failed`; бюджет скана — §5.2 |
+| `systems` | `id, name, system_type, site_id, control_authority, owner_person_id, operator_org, has_pdn, kii_scope, criticality, status, notes` | `control_authority ∈ FULL|SHARED|EXTERNAL|UNKNOWN`; `has_pdn/kii_scope ∈ yes|no|unknown` (телемедицина — UNKNOWN + обязательство «уточнить») |
+| `system_components` | `system_id, asset_id, role, note` | PK(system_id, asset_id) |
+| `persons` | `id, fio, position, phone, email, user_id NULL` | реестр людей; логин — отдельно (Django `auth_user`), связь опциональна |
+
+### 3.2. Нормативка → контроли → проверки
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `norm_acts` | `id, name, version, effective_from, note` | 117/КИИ, 152-ФЗ (ПДн), приказы ФСТЭК (СКЗИ), СКЗИ-регламенты |
+| `requirements` | `id, norm_act_id, domain, clause, text` | атомарный пункт; `domain`: kii/pdn/skzi/medical/other |
+| `controls` | `id, code, name, domain, description` | каталог мер; «топ-15» на старте |
+| `requirement_control_map` | `requirement_id, control_id` | M:N |
+| `control_tests` | `id, control_id, test_type, frequency_days NULL, pass_criteria, evidence_kinds jsonb, is_mandatory` | `test_type ∈ document|config|interview|scan|restore|other`; без периодичности — разовый/по событию |
+| `control_implementations` | `id, control_id, system_id, owner_person_id, is_applicable, applicability_reason, status, last_test_at, next_due_at, exception_note, exception_approved_at, exception_review_at` | `status ∈ NA|Planned|Implemented|Verified|NonCompliant|ExternalDependency|ExceptionApproved`; UNIQUE(control_id, system_id) |
+| `test_runs` | `id, test_id, system_id, run_at, result, notes, evidence_id, created_by` | `result ∈ pass|fail|partial`; при сохранении пересчитывает `next_due_at` = `run_at + frequency_days` |
+
+Статусы читаются так: `ExternalDependency` — для МИС/ЗУП/хостинга и части ЛИС/PACS, где исполнение
+у министерства/подрядчика; закрывается evidence от оператора **или** фиксируется как риск/исключение.
+`ExceptionApproved` — только решением руководства (кейс PACS-бэкапов, §7.1): выставляет `ib_admin`,
+обязательно с evidence решения и сроком пересмотра (`exception_review_at`).
+
+### 3.3. Evidence
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `evidence_objects` | `id, title, kind, storage_key, filename, mime, size, sha256, issued_at, valid_until NULL, confidentiality, letter_direction, letter_number, letter_date, correspondent, reply_due_at, reply_status, metadata jsonb, uploaded_by, created_at` | файл в S3 bucket `evidence` (private, SeaweedFS); `sha256` считается при загрузке; `kind ∈ letter|act|contract|export|report|screenshot|scan|other`; поля `letter_*` — только для `kind=letter` (индексируются) |
+| `evidence_links` | `id, evidence_id, entity_type, entity_id, role` | `role ∈ proof|source|attachment`; UNIQUE(evidence_id, entity_type, entity_id, role) |
+
+- Бумажные письма ФСТЭК: `kind=letter` + поля `letter_direction (in|out), letter_number, letter_date,
+  correspondent`; `reply_due_at/reply_status` — контроль ожидаемого ответа; экран «журнал переписки» =
+  фильтр по `kind=letter` с сортировкой по датам. Письмо связывается с инстансом обязательства
+  «контроль ответа» через `evidence_links`.
+- Связи evidence — только через `evidence_links`; прямые FK (`test_runs.evidence_id` и т.п.) — это
+  «основное доказательство» (role=`proof`); отчёт «покрытие evidence» строится по `evidence_links`.
+- Истечение: `valid_until` — источник отчёта «evidence истекает через N дней» и напоминаний.
+- Скачивание: только через `web` (проверка прав), поток из S3-хранилища; хранилище наружу не публикуется.
+
+### 3.4. КЗИ/ПЗИ
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `kpi_groups` | `id, code, name, weight_rj, sort` | Σ `weight_rj` = 1 |
+| `kpi_items` | `id, group_id, code, name, max_value, weight, is_mandatory, sort` | `weight` — внутри группы |
+| `assessments` | `id, assessment_type, assessed_at, period_label, period_start, period_end, status, result_value NULL, verdict, details jsonb, created_by` | `assessment_type ∈ KZI|PZI`; `status ∈ draft|incomplete|submitted|closed` |
+| `assessment_systems` | `assessment_id, system_id` | скоуп оценки |
+| `kpi_values` | `id, assessment_id, system_id, kpi_item_id, value NULL, source, evidence_id NULL, note` | `value NULL` = нет данных (≠ 0); UNIQUE(assessment, system, item) |
+| `assessment_penalties` | `id, assessment_id, kpi_group_id, window_start, window_end, reason, cap_value, triggered_by` | штраф = «потолок» оценки группы в окне |
+| `remediation_plans` | `id, assessment_id, title, created_at` | генерируется из «почему не 1» |
+| `remediation_tasks` | `id, plan_id, title, system_id, kpi_item_id NULL, owner_person_id, due_at, status, evidence_id NULL` | `status ∈ open|done|cancelled` |
+
+**Формула (по умолчанию; модуль `apps/kzi/formula.py`, утвердить при реализации):**
+
+```text
+group_score(system, j) = Σ_i (weight_i · value_i) / Σ_i (weight_i · max_i)
+  · обязательные items: NULL запрещён при закрытии (см. правила ниже);
+  · необязательные NULL считаются 0 («не подтверждено», помечается в объяснении) — пропуск не улучшает оценку;
+  · cap из assessment_penalties применяется, если окно штрафа пересекает [period_start, period_end]:
+    group_score := min(group_score, cap)
+system_score(system)   = Σ_j ( weight_rj · group_score(system, j) )
+final                  = min по system из скоупа        ← «донор» минимума виден в объяснении
+verdict                = по порогам из настроек (default: ≥0.95 высокий, ≥0.80 средний, иначе низкий — уточнить)
+```
+
+ПЗИ использует тот же каталог KPI и ту же формулу с периодом 2 года; отдельная методика ПЗИ (если появится)
+заменяет формулу в том же изолированном модуле.
+
+**Правила закрытия оценки:**
+
+- есть обязательный `kpi_item` с `value IS NULL` в скоупе → кнопка «Закрыть» блокируется, статус переводится
+  в `incomplete`, показывается список пробелов;
+- `value > 0` без `evidence_id` → запрещено (0 без evidence допустим, NULL — нет);
+- снапшот: `details` хранит все промежуточные значения (группы, системы, cap'ы, донор) — расчёт воспроизводим.
+
+**Экран «почему не 1»:** сортировка по вкладу в отставание `weight_rj · (1 − group_score)`,
+показать систему-донора, для каждой строки — ссылки на evidence и источник значения.
+
+### 3.5. Обязательства
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `obligation_templates` | `id, kind, name, recurrence_rule NULL, lead_days, escalation_policy jsonb, applies_to jsonb, requires_closing_evidence, owner_role` | `recurrence_rule` — RRULE (dateutil); NULL = разовое; `lead_days` default `{30,7,1}`; `escalation_policy = [{step, after_days, recipients: [{role} \| {person_id}]}]` |
+| `obligation_instances` | `id, template_id, due_at, status, owner_person_id, related_entity_type, related_entity_id, escalation_level, closure_evidence_id NULL, closed_at NULL` | `status ∈ planned|due_soon|overdue|done|cancelled`; UNIQUE(template_id, due_at, related_entity_id) |
+
+Стартовый набор шаблонов: КЗИ — 6 мес.; ПЗИ — 2 года; «отчёт после оценки» — событие + SLA 5 раб. дней;
+«доведение руководителю» — событие + 3 кал. дня; «пересмотр договоров/assurance» — 1 год;
+«получить assurance pack» — разово/1 год (ЛИС/PACS/хостинг/МИС/ЗУП); «контроль ответа ФСТЭК» —
+через N дней после исходящего письма (привязка к письму через `evidence_links`); «проверка восстановления
+бэкапов» — ежемесячно; «телемедицина: уточнить модель владения» — разово; «обновление ПО/зеркал» — квартально.
+Beat материализует инстансы вперёд на 12–18 мес.
+
+Assurance pack отдельной сущностью не вводим (MVP): это связка «обязательство + приложения-evidence +
+статус `ExternalDependency`» у соответствующих контролей.
+
+Владельцы и получатели эскалаций обязаны иметь `user_id` (для in-app) или `email` — валидация при назначении.
+
+### 3.6. Инциденты
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `incidents` | `id, kind, detected_at, system_id NULL, severity, description, status, closed_at` | `status ∈ open|investigating|closed` |
+| `incident_notification_rules` | `id, kind, stage_code, offset_minutes, target, template_code, applies_if jsonb, note` | `applies_if` — условие применимости (напр. `{"kii_scope": "yes"}` для стадии «1 час»); `template_code` — текст уведомления; T1/T2 — настраиваемые |
+| `incident_notifications` | `id, incident_id, rule_id, stage_code, deadline_at, sent_at NULL, status, channel, evidence_id NULL` | таймер = `detected_at + offset`; evidence отправки обязателен для закрытия стадии |
+
+### 3.7. Уведомления (единый интерфейс каналов)
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `notification_channels` | `id, kind, name, config jsonb, enabled, is_default` | `kind ∈ inapp|email|telegram|messenger`; секреты (SMTP-пароль, bot token, webhook) — в env, в `config` только имена env-переменных/адреса |
+| `notification_templates` | `id, code, subject, body, channel_kind NULL` | рендер Django-шаблонизатором; `channel_kind NULL` = любой |
+| `notifications` | `id, channel_id, template_code, payload jsonb, status, attempts, last_error, dedupe_key UNIQUE NULL, sent_at, created_at` | `status ∈ pending|sent|failed|skipped`; журнал доставки — аудит уведомлений |
+
+Адаптеры: `inapp` (запись + бейдж), `email` (SMTP из env), `telegram` (Bot API), `messenger`
+(webhook, по умолчанию совместим с Mattermost incoming webhook). Недоставка не блокирует
+бизнес-операцию: статус фиксируется, ретраи с backoff, после N попыток — уведомление админу in-app.
+
+### 3.8. Доступ и аудит
+
+| Таблица | Поля (ключевые) | Примечания |
+|---|---|---|
+| `core_user` (Django, кастомный) | стандартные поля AbstractUser | + `persons.user_id`; роли — Django groups (§4) |
+| RBAC | Django groups (см. §4) | права — на уровне view/queryset |
+| `audit_log` | `id, at, actor_user_id, actor_ip, action, entity_type, entity_id, diff jsonb` | append-only: нет update/delete через приложение; пишется сервисным слоем. Аудит-след не режем (правило в AGENTS.md) |
+
+---
+
+## 4. Роли и доступ (RBAC)
+
+| Роль (group) | Реестр | Discovery | Контроли/тесты | Evidence | Обязательства | КЗИ | Инциденты | Отчёты | Админ |
+|---|---|---|---|---|---|---|---|---|---|
+| `ib_admin` (ИБ-админ) | rw | rw | rw | rw | rw | rw | rw | rw | + users, аудит |
+| `ib_officer` (ИБ) | rw | rw | rw | rw | rw | rw | rw | rw | — |
+| `it_ops` (ИТ) | rw | rw | r | r | r | — | r | r | — |
+| `system_owner` (владелец ИС) | свои ИС: rw | r | свои ИС: rw | свои ИС: rw | только свои | r | свои ИС: r | свои ИС | — |
+| `reader` (руководство) | r | — | r | r (метаданные) | r | r | r | r | — |
+
+Уточнения: `system_owner` видит только привязанные ИС (фильтр по `systems.owner_person_id`);
+`reader` не скачивает evidence (видит факт наличия), исключения — по решению. Статус `ExceptionApproved`
+выставляет только `ib_admin` — обязательно с evidence решения руководства и сроком пересмотра.
+Все мутации — в `audit_log`.
+
+---
+
+## 5. Модули и сценарии (функциональные требования)
+
+### 5.1. Реестр
+
+- CRUD площадок, segment-ов («network scopes»: подсеть/площадка/описание/ответственный/окно скана).
+- `assets` наполняются коллектором; вручную — обогащение (роль, владелец, привязка к ИС).
+- **Отчёт «Unknown assets»:** активы без `system_components` и без ответственного, с датой обнаружения.
+- `systems`: карточка ИС с владельцем, authority, PDн/КИИ, подрядчиком; пометка «внешний контур» через
+  `control_authority=EXTERNAL` + сегмент `MINISTRY_SECURE_ZONE`.
+
+### 5.2. Discovery / коллектор
+
+- Источники: Mikrotik SNMP (v2c/v3, community/креды из env), RouterOS API (опционально),
+  ICMP sweep, nmap — профиль `top100` (`-T3 --top-ports 100 --host-timeout 10s --max-rate 100`,
+  без агрессивных скриптов). Mikrotik-адаптер включается после получения реквизитов
+  (Приложение В, №2); до этого работают ICMP sweep и nmap.
+- Политика: скан только по `segments.scan_enabled` и только в `scan_window`; всё прочее — отказ с записью в лог.
+- Бюджет скана: host-timeout 10 с, max-rate 100 pps, chunk по /24, `scan_runs` возобновляемы; по умолчанию окно — ночь.
+- Сканы идут без обратного DNS (`-n`): в больничном контуре DNS-зоны узлов может не быть,
+  и резолвинг вешает скан. Sweep: `-sn -n -T3`; порт-скан: `-n -T3 --top-ports 100`
+  (T2 пробовали вживую: задержка 0.4 с на пробу не даёт уложить top-100 в host-timeout 10 с).
+- Плановый обход сегмента — раз в сутки (beat проверяет каждые 30 минут: включён, интервал прошёл, окно открыто).
+- Идентичность актива: сначала MAC; если MAC неизвестен — по IP среди активных. Переиспользование IP другим MAC →
+  старый актив закрывается (`disappeared`, reason=`ip_reused`), создаётся новый — без ложных склеек.
+- Результат: upsert `assets`, запись `asset_events` (новые/пропавшие/изменения) и `scan_runs` (статистика).
+  Пропажа фиксируется после 3 подряд промахов (анти-мигание); закрытый актив больше не «промахивается».
+- Пустой список портов = «нет данных порт-скана»: ping-профиль не стирает порты, собранные `top100`
+  (открытие/закрытие отдельных портов фиксируется как `ports_changed`).
+- Экраны: `/registry/` — CRUD сегментов с окном скана; `/registry/assets/` — карточки
+  «всего / в сети / новые за 24 ч» и распределение по площадкам и сегментам (отчёт «новые за сутки»).
+
+### 5.3. Нормативка → контроли → проверки
+
+- Каталоги: НПА → требования → контроли (M:N). Стартовое наполнение: верхнеуровневый каталог 117/КИИ/ПДн/СКЗИ,
+  «топ-15» контролей и тестов (наполняются на неделе 4).
+- Матрица «ИС → контроль»: применимость + статус; фильтр «применимо, но не внедрено/не подтверждено».
+- `test_runs` фиксируют факт проверки; `next_due_at` пересчитывается автоматически; просроченные тесты → дашборд + уведомление владельцу.
+
+### 5.4. Evidence
+
+- Загрузка файла (лимит 100 МБ по умолчанию; настраиваемый whitelist: pdf, doc/docx, odt, rtf, txt, csv,
+  xlsx/ods, xml, json, png, jpg, zip, rar, 7z, cfg/log), sha256, метаданные.
+- Привязка к сущностям через `evidence_links` (к тесту, контролю, обязательству, письму, инциденту).
+- Конфиденциальность: `confidentiality ∈ internal|restricted`; видимость скачивания по ролям.
+- «Evidence истекает через N дней» (по `valid_until`); покрытие evidence по контролю/ИС.
+- Процесс бумаги: скан → загрузка (`letter`) → метаданные (исх/вх, номер, дата, адресат, суть) → привязка.
+
+### 5.5. Обязательства
+
+- CRUD шаблонов (RRULE + lead_days + политика эскалации + область применения).
+- Материализация инстансов на 12–18 мес вперёд; календарный экран (по неделям/месяцам).
+- Уведомления 30/7/1 день по каналам; при просрочке — эскалация уровням из `escalation_policy`
+  (например: владелец → ИБ-админ → руководство с шагом N дней).
+- Закрытие: с `closure_evidence_id`, если `requires_closing_evidence`.
+
+### 5.6. КЗИ/ПЗИ
+
+- Справочники: группы (веса `r_j`), показатели (`max_value`, вес, обязательность).
+- Оценка: создание `assessment` (тип, период, скоуп ИС) → таблица ввода `kpi_values` с привязкой evidence →
+  контроль полноты (NULL ≠ 0) → закрытие → расчёт (формула §3.4) → снапшот.
+- Экран «почему не 1» (§3.4) → генерация `remediation_plan` с задачами и сроками → контроль исполнения
+  → выгрузка отчёта руководству (XLSX + печатная HTML-форма; PDF — по решению, Приложение В).
+
+### 5.7. Инциденты
+
+- Ручная регистрация: вид, время обнаружения, система, серьёзность, описание.
+- Стадии уведомлений из справочника правил; таймеры (обратный отсчёт до `deadline_at`), статусы, evidence отправки.
+- Закрытие инцидента: разбор + подтверждающие материалы; просроченные стадии — на дашборд и в эскалации.
+
+### 5.8. Уведомления
+
+- Единый сервис `notify(template_code, payload, channels=…)`; дедупликация `dedupe_key`.
+- Каналы: in-app (MVP), SMTP (MVP), Telegram (адаптер готов, включается реквизитами),
+  внутренний мессенджер (адаптер webhook). Настройка каналов — админ-экран (env-реквизиты — в `.env`).
+- Журнал доставки + повторные попытки; сводка «что не доставлено» для ИБ-админа.
+
+### 5.9. Отчётность и дашборды
+
+- Дашборды по ролям (см. §4): ИБ, ИТ, владельцы ИС, руководство.
+- Выгрузки (XLSX): «состояние контролей», «просрочки», «покрытие evidence», «неизвестные активы», «КЗИ отчёт».
+- 1-страничный отчёт руководству: риски, просрочки, план, КЗИ (печатная форма).
+
+### 5.10. REST API (эскиз)
+
+- Базовый префикс `/api/v1/`; auth — сессия Django (cookie+CSRF), доступ — по группам RBAC.
+- Ресурсы: `segments, assets, asset-events, systems, requirements, controls, control-implementations,
+  test-runs, evidence, evidence-links, obligations, assessments, kpi-values, incidents, notifications, reports/*`.
+- Пагинация 50/стр., фильтры (django-filter), сортировка; HTMX-страницы используют те же queryset'ы.
+- API-токены для скриптов — **не делаем**, пока не появится реальный потребитель (открытый вопрос №8).
+
+---
+
+## 6. Нефункциональные требования
+
+| Категория | Требование |
+|---|---|
+| Объём данных | ≤ 2 000 активов, ≤ 300 ИС, ~10 000 строк матрицы контролей, evidence — десятки тысяч объектов, рост ~10–20 ГБ/год |
+| Производительность | страницы списков ≤ 500 мс p95 на одной VM; массовые операции (импорт, экспорт) — фоновыми задачами |
+| Доступность | рабочее время 08:00–19:00 МСК; профработы — вечером/выходные; HA не требуется |
+| Бэкапы | pg_dump ежедневно + снапшот S3-хранилища (stop → tar → start) → внешний диск/NAS; RPO ≤ 24 ч, RTO ≤ 4 ч (уточнить, №6); тест восстановления — ежемесячно (оформлен как обязательство!) |
+| Время | хранение UTC, отображение Europe/Moscow; таймеры минутной точности (beat) |
+| Журналирование | прикладной `audit_log` (append-only) + структурные логи приложения (JSON, ротация) |
+| Хранение evidence | по умолчанию бессрочно для писем/актов/договоров; технические сканы discovery — 12 мес., дальше агрегаты (уточнить, №7) |
+| Браузеры | актуальные Chromium/Firefox (внутренние АРМ) |
+
+---
+
+## 7. Интеграции
+
+| Система | Способ | Что получаем |
+|---|---|---|
+| Mikrotik | SNMP v2c/v3, опц. RouterOS API | ARP/DHCP/нейборы/интерфейсы → активы и дрейф |
+| Подсети (scopes) | ICMP + nmap top-100 | «живые» узлы, порты, best-effort fingerprint |
+| Континент-4 | ручные выгрузки (правила/настройки/отчёты) файлами | evidence по VPN/СЗИ |
+| SMTP | env-реквизиты | напоминания/эскалации почтой |
+| Telegram | Bot API (токен в env) | быстрые уведомления |
+| Внутренний мессенджер | webhook (Mattermost-совместимый) | уведомления в команду |
+| МИС/ЗУП/хостинг/ЛИС/PACS | assurance pack (шаблоны запросов, Приложение Б) | external assurance → `ExternalDependency` + evidence |
+
+### 7.1. Специальные кейсы (обязательны к поддержке)
+
+1. **PACS: бэкапов нет и не будет.** Контроль «резервное копирование» → `NonCompliant`; исключение —
+   только `ExceptionApproved` решением руководства; от подрядчика — письмо о политике сохранности (external assurance).
+2. **ЛИС: «бэкапит подрядчик, не знаю как».** Обязательство «получить assurance pack ЛИС»:
+   где бэкапится, RPO/RTO, тесты восстановления, контакты 24×7; evidence — акт/регламент/отчёты.
+3. **ФСТЭК только бумага, нет СЭД.** Локальная доказательная база: сканы исх/вх + журнал
+   «что/когда/кому» + обязательство «контроль статуса ответа раз в N дней».
+4. **Контур министерства (SecretNet/Dr.Web/РЕДОС).** Сегмент `MINISTRY_SECURE_ZONE`; по AV/EDR/
+   endpoint-политикам — `ExternalDependency`, evidence от оператора или фиксация невозможности как риск/исключение.
+
+---
+
+## 8. Безопасность системы
+
+- Периметр: UI доступен только из админ-подсетей/через VPN Континент-4; наружу не публикуется.
+- TLS: сертификат внутреннего УЦ; HTTP → редирект; HSTS, secure cookies, CSRF (Django hardening, `check --deploy` в CI).
+- Аутентификация: локальные пользователи, пароли ≥ 12 символов с проверкой по словарю, Argon2;
+  блокировка после N неудач; сессии с таймаутом (уточнить №9, default 8 ч). 2FA — фаза 2.
+- Секреты: только `.env` (права 600), в репозитории — `.env.example`. Ротация при смене админов.
+- Загрузки: whitelist расширений/MIME, лимит размера, хранение вне webroot, отдача с `Content-Disposition: attachment`.
+- Изоляция: S3/Postgres/Redis наружу не публикуются (только внутренняя docker-сеть); collector-контейнер —
+  только `NET_RAW`, отдельный профиль compose.
+- Аудит: все мутации — в `audit_log`; входы (успех/неудача) — в логе приложения.
+- Обновления: регулярно (офлайн-зеркала pip/apt через прокси), отдельным обязательством в пульте.
+
+---
+
+## 9. Развёртывание
+
+- VM: Ubuntu Server (или Rocky), 6–8 vCPU, 24–32 ГБ RAM, диски: 100 ГБ система + 300–1000 ГБ evidence + 100–200 ГБ БД.
+- Docker Compose, каталог `/opt/grc`: `compose.yaml`, `.env`, `certs/`, `backups/`.
+- Сервисы: `nginx, web, worker, beat, postgres, redis, s3`; профиль `scan` добавляет `collector`
+  (worker очереди `scan`; beat только один — в core).
+- Бэкап: `ops/backup.sh` (pg_dump + снапшот S3) + systemd timer; `ops/restore-check.sh` — проверка восстановления.
+- Первичное наполнение: миграции + data-миграции справочников (группы KPI, топ-контроли, шаблоны обязательств,
+  правила уведомлений инцидентов).
+
+---
+
+## 10. План внедрения
+
+Поэтапный план (12 недель), TDD-процесс, тестовая стратегия и критерии приёмки — в
+`docs/IMPLEMENTATION-PLAN.md`.
+
+---
+
+## Приложение А. Глоссарий
+
+| Термин | Значение |
+|---|---|
+| Evidence | доказательство: файл (скан/акт/выгрузка/скриншот) с метаданными и привязками |
+| Network scope | сегмент сети (подсеть), по которому разрешён discovery |
+| Control implementation | применимость контроля к конкретной ИС с владельцем и статусом |
+| External dependency | зависимость исполнения от министерства/подрядчика; закрывается evidence от оператора |
+| Assurance pack | типовой запрос доказательств от подрядчика/оператора (Приложение Б) |
+| Донор минимума | система с минимальным КЗИ, определяющая итог (min по ИС) |
+
+## Приложение Б. Минимальный assurance pack (шаблон запроса подрядчику)
+
+1) Границы ответственности (RACI). 2) Меры защиты (СЗИ/СКЗИ, сегментация, журналирование).
+3) Управление уязвимостями/обновлениями (периодичность). 4) Бэкапы/архивирование (RPO/RTO, тест восстановления).
+5) Реагирование на инциденты: SLA уведомлений, контакты 24×7. 6) Аттестация/оценки/сертификаты.
+7) Обучение и доступы администраторов. Форма ответа: официальное письмо + артефакты (регламенты/отчёты/акты)
+как evidence с привязкой к ИС.
+
+## Приложение В. Открытые вопросы (решаются до соответствующих недель)
+
+| № | Вопрос | Нужно к неделе |
+|---|---|---|
+| 1 | Список подсетей/VLAN (даже приблизительный) для Network scopes | 2 |
+| 2 | Реквизиты Mikrotik: SNMP community (v2c) или учётка v3/API | 2 |
+| 3 | SMTP-релей: адрес, порт, TLS, учётка, From | 6 |
+| 4 | Telegram: токен бота, chat_id; разрешён ли выход из сети VM | 6 |
+| 5 | Мессенджер: какой именно (Mattermost?) + webhook URL | 6 |
+| 6 | Подтвердить RPO 24 ч / RTO 4 ч | 1 |
+| 7 | Политика хранения сканов discovery и черновиков | 5 |
+| 8 | Нужны ли API-токены/скриптовые интеграции (сейчас: нет) | 8 |
+| 9 | Таймаут сессий и политика паролей (default: 8 ч, ≥12 симв.) | 1 |
+| 10 | Пороги вердикта КЗИ (default в §3.4) и методика (если утверждена) | 7 |
+| 11 | Прямые контакты владельцев ИС и подрядчиков для `persons` | 3 |
+| 12 | Нужен ли PDF-экспорт отчётов (или XLSX + печатная форма достаточно) | 9 |

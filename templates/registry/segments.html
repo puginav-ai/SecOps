@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Сегменты (network scopes){% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Сегменты (network scopes)</h1>
+  {% if can_edit %}
+    <a class="btn btn-primary btn-sm" href="{% url 'registry:segment_create' %}">Добавить сегмент</a>
+  {% endif %}
+</div>
+<p class="text-secondary mb-3">
+  Discovery сканирует только включённые сегменты и только внутри окна скана.
+  <a href="{% url 'registry:asset_list' %}">Активы →</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Площадка</th><th>Сегмент</th><th>Подсеть</th><th>VLAN</th>
+          <th>Скан</th><th>Профиль</th><th>Окно</th><th>Последний скан</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in segments %}
+          <tr>
+            <td>{{ s.site }}</td>
+            <td>{{ s.name }}</td>
+            <td><code>{{ s.cidr }}</code></td>
+            <td>{{ s.vlan|default_if_none:"—" }}</td>
+            <td>
+              {% if s.scan_enabled %}
+                <span class="badge text-bg-success">вкл</span>
+              {% else %}
+                <span class="badge text-bg-secondary">выкл</span>
+              {% endif %}
+            </td>
+            <td>{{ s.get_scan_profile_display }}</td>
+            <td>{{ s.scan_window.start }}–{{ s.scan_window.end }}</td>
+            <td>{{ s.last_scan_at|date:"d.m.Y H:i"|default:"—" }}</td>
+            <td class="text-end">
+              {% if can_edit %}
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'registry:segment_edit' s.pk %}">Изменить</a>
+                <form method="post" action="{% url 'registry:segment_delete' s.pk %}" class="d-inline"
+                      onsubmit="return confirm('Удалить сегмент?');">
+                  {% csrf_token %}
+                  <button class="btn btn-outline-danger btn-sm" type="submit">Удалить</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="9" class="text-secondary">
+              Сегментов пока нет. Добавьте подсети больницы — это network scope для discovery.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
