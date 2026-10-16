@@ -4,13 +4,21 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
+from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.kzi import formula
 from apps.kzi.formula import ItemValue
-from apps.kzi.models import Assessment, KpiGroup, KpiItem, KpiValue
+from apps.kzi.models import (
+    Assessment,
+    KpiGroup,
+    KpiItem,
+    KpiValue,
+    RemediationPlan,
+    RemediationTask,
+)
 
 
 def missing_mandatory(assessment: Assessment) -> list[tuple]:
@@ -172,3 +180,46 @@ def parse_value(raw: str) -> Decimal | None:
         return Decimal(raw.replace(",", "."))
     except InvalidOperation as exc:
         raise ValidationError(f"Значение «{raw}» — не число") from exc
+
+
+# Дедлайн задач плана ≤ следующей оценки: для КЗИ — 6 месяцев (SDD §3.5)
+REMEDIATION_MONTHS = 6
+
+
+def create_remediation_plan(assessment: Assessment) -> RemediationPlan:
+    """План мероприятий из «почему не 1»: задачи по слабым KPI донора, сортировка по весу."""
+    if assessment.status != Assessment.Status.CLOSED:
+        raise ValidationError("План строится только по закрытой оценке")
+    if assessment.remediation_plans.exists():
+        raise ValidationError("План для этой оценки уже создан")
+
+    items_by_code = {item.code: item for item in KpiItem.objects.all()}
+    systems_by_name = {
+        link.system.name: link.system for link in assessment.scope.select_related("system")
+    }
+    donor = systems_by_name.get(assessment.details.get("donor", ""))
+    base_date = (assessment.assessed_at or timezone.now()).date()
+    due_at = base_date + relativedelta(months=REMEDIATION_MONTHS)
+
+    plan = RemediationPlan.objects.create(
+        assessment=assessment, title=f"Мероприятия по «{assessment}»"
+    )
+    for row in assessment.details.get("why", []):
+        weak_items = sorted(
+            row.get("items", []),
+            key=lambda weak: (
+                items_by_code.get(weak["code"]).weight if items_by_code.get(weak["code"]) else 0
+            ),
+            reverse=True,
+        )
+        for weak in weak_items:
+            item = items_by_code.get(weak["code"])
+            RemediationTask.objects.create(
+                plan=plan,
+                title=f"Довести KPI «{item.name if item else weak['code']}»",
+                system=donor,
+                kpi_item=item,
+                owner_person=donor.owner_person if donor else None,
+                due_at=due_at,
+            )
+    return plan

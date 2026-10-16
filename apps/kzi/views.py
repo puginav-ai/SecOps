@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -11,7 +12,14 @@ from apps.core.access import module_access, role_required
 from apps.evidence.models import EvidenceObject
 from apps.kzi import services
 from apps.kzi.forms import AssessmentForm
-from apps.kzi.models import Assessment, KpiGroup, KpiItem, KpiValue
+from apps.kzi.models import (
+    Assessment,
+    KpiGroup,
+    KpiItem,
+    KpiValue,
+    RemediationPlan,
+    RemediationTask,
+)
 
 
 @role_required("kzi")
@@ -63,6 +71,9 @@ def assessment_detail(request, pk: int):
         for group in groups
     ]
     preview = services.compute_snapshot(assessment) if systems else None
+    plans = assessment.remediation_plans.prefetch_related(
+        "tasks__system", "tasks__kpi_item", "tasks__owner_person"
+    )
     return render(
         request,
         "kzi/detail.html",
@@ -72,6 +83,7 @@ def assessment_detail(request, pk: int):
             "systems": systems,
             "evidences": EvidenceObject.objects.order_by("-created_at")[:200],
             "preview": preview,
+            "plans": plans,
             "can_edit": module_access(request.user, "kzi") == "rw",
         },
     )
@@ -129,3 +141,51 @@ def assessment_close(request, pk: int):
             f"(донор: {snapshot['donor'] or '—'})",
         )
     return redirect("kzi:detail", pk=assessment.pk)
+
+
+@role_required("kzi", "rw")
+@require_POST
+def remediation_create(request, pk: int):
+    assessment = get_object_or_404(Assessment, pk=pk)
+    try:
+        plan = services.create_remediation_plan(assessment)
+    except ValidationError as exc:
+        messages.error(request, exc.messages[0])
+    else:
+        messages.success(request, f"План создан: задач {plan.tasks.count()}")
+    return redirect("kzi:detail", pk=assessment.pk)
+
+
+@role_required("kzi", "rw")
+@require_POST
+def task_set_status(request, plan_id: int, task_id: int):
+    task = get_object_or_404(RemediationTask, pk=task_id, plan_id=plan_id)
+    new_status = request.POST.get("status")
+    if new_status in {RemediationTask.Status.DONE, RemediationTask.Status.CANCELLED}:
+        task.status = new_status
+        task.save(update_fields=["status"])
+        messages.success(request, f"Задача обновлена: {task.get_status_display()}")
+    return redirect("kzi:detail", pk=task.plan.assessment_id)
+
+
+@role_required("kzi")
+def plan_export_csv(request, pk: int):
+    """Выгрузка плана мероприятий (CSV для Excel: BOM + разделитель ';')."""
+    plan = get_object_or_404(RemediationPlan.objects.select_related("assessment"), pk=pk)
+    lines = ["ИС;KPI;Задача;Ответственный;Срок;Статус"]
+    for task in plan.tasks.select_related("system", "kpi_item", "owner_person"):
+        lines.append(
+            ";".join(
+                [
+                    task.system.name if task.system else "—",
+                    task.kpi_item.code if task.kpi_item else "—",
+                    task.title.replace(";", ","),
+                    str(task.owner_person) if task.owner_person else "—",
+                    task.due_at.strftime("%d.%m.%Y") if task.due_at else "—",
+                    task.get_status_display(),
+                ]
+            )
+        )
+    response = HttpResponse("\ufeff" + "\n".join(lines), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="plan-{plan.pk}.csv"'
+    return response

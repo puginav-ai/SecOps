@@ -8,6 +8,84 @@
   {% for r in roles %}<span class="badge text-bg-secondary me-1">{{ r }}</span>{% empty %}не назначены{% endfor %}
 </p>
 
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-4">
+  <div class="col">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <div class="text-secondary small">Активы (в сети)</div>
+      <div class="h4 mb-0">{{ summary.assets_active }} <span class="text-secondary fs-6">/ {{ summary.assets_total }}</span></div>
+      <a class="small" href="{% url 'registry:asset_list' %}">активы →</a>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <div class="text-secondary small">Unknown assets</div>
+      <div class="h4 mb-0">{{ summary.unknown_assets }}</div>
+      <a class="small" href="{% url 'registry:unknown_assets' %}">разобрать →</a>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <div class="text-secondary small">ИС в реестре</div>
+      <div class="h4 mb-0">{{ summary.systems_count }}</div>
+      <a class="small" href="{% url 'registry:system_list' %}">реестр ИС →</a>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <div class="text-secondary small">Пробелы контролей</div>
+      <div class="h4 mb-0">{{ summary.gaps_count }}</div>
+      <a class="small" href="{% url 'compliance:matrix' %}?gap=1">матрица →</a>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <div class="text-secondary small">Обязательства</div>
+      <div class="h4 mb-0">
+        <span class="text-danger">{{ summary.obligations_overdue }}</span>
+        <span class="text-secondary fs-6">/ {{ summary.obligations_soon }}</span>
+      </div>
+      <a class="small" href="{% url 'obligations:list' %}">просрочено / скоро →</a>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <div class="text-secondary small">Evidence истекает (30 дн.)</div>
+      <div class="h4 mb-0">{{ summary.evidence_expiring }}</div>
+      <a class="small" href="{% url 'evidence:expiring' %}">к отчёту →</a>
+    </div></div>
+  </div>
+</div>
+
+{% if summary.last_assessment %}
+  <p class="mb-4">
+    Последняя закрытая оценка:
+    <strong>{{ summary.last_assessment.result_value }}</strong>
+    ({{ summary.last_assessment.verdict }}, {{ summary.last_assessment.get_assessment_type_display }},
+    {{ summary.last_assessment.assessed_at|date:"d.m.Y" }})
+    — <a href="{% url 'kzi:detail' summary.last_assessment.pk %}">почему не 1 →</a>
+  </p>
+{% endif %}
+
+{% if summary.overdue_top %}
+  <h2 class="h5">Просроченные обязательства</h2>
+  <div class="card shadow-sm mb-4"><div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Срок</th><th>Обязательство</th><th>Владелец</th><th>Эскалация</th></tr></thead>
+      <tbody>
+        {% for item in summary.overdue_top %}
+          <tr class="table-danger">
+            <td>{{ item.due_at|date:"d.m.Y" }}</td>
+            <td><a href="{% url 'obligations:list' %}">{{ item.template.name }}</a></td>
+            <td>{{ item.owner_person|default:"—" }}</td>
+            <td>{% if item.escalation_level %}шаг {{ item.escalation_level }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+{% endif %}
+
+<h2 class="h5">Разделы (по вашим ролям)</h2>
 <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
   {% for m in modules %}
     <div class="col">

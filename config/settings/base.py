@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "apps.obligations",
     "apps.notifications",
     "apps.kzi",
+    "apps.reporting",
 ]
 
 MIDDLEWARE = [

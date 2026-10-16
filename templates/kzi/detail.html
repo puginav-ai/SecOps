@@ -119,4 +119,54 @@
     Снапшот расчёта сохранён: {{ assessment.details.computed_at|slice:":19" }}.
   </p>
 {% endif %}
+
+{% if assessment.status == "closed" %}
+  <h2 class="h5 mt-4">План мероприятий</h2>
+  {% if can_edit and not plans %}
+    <form method="post" action="{% url 'kzi:remediation_create' assessment.pk %}" class="mb-3">
+      {% csrf_token %}
+      <button class="btn btn-primary btn-sm" type="submit">Создать план из «почему не 1»</button>
+    </form>
+  {% endif %}
+  {% for plan in plans %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong>{{ plan.title }}</strong>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'kzi:plan_export' plan.pk %}">Выгрузка CSV</a>
+        </div>
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Задача</th><th>ИС</th><th>Ответственный</th><th>Срок</th><th>Статус</th><th></th></tr></thead>
+          <tbody>
+            {% for task in plan.tasks.all %}
+              <tr>
+                <td>{{ task.title }}</td>
+                <td>{{ task.system|default:"—" }}</td>
+                <td>{{ task.owner_person|default:"—" }}</td>
+                <td>{{ task.due_at|date:"d.m.Y"|default:"—" }}</td>
+                <td>{{ task.get_status_display }}</td>
+                <td class="text-end">
+                  {% if can_edit and task.status == "open" %}
+                    <form method="post" action="{% url 'kzi:task_status' plan.pk task.pk %}" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="status" value="done">
+                      <button class="btn btn-outline-success btn-sm" type="submit">Выполнена</button>
+                    </form>
+                    <form method="post" action="{% url 'kzi:task_status' plan.pk task.pk %}" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="status" value="cancelled">
+                      <button class="btn btn-outline-secondary btn-sm" type="submit">Отменить</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="text-secondary">Задач нет — оценка без отставаний.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
 {% endblock %}

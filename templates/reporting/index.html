@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Отчёты{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Отчёты</h1>
+<p class="text-secondary mb-3">
+  Состояние контролей, просрочки, покрытие evidence, КЗИ.
+</p>
+
+<div class="row row-cols-2 row-cols-md-4 g-3 mb-4">
+  <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-secondary small">Пробелы контролей</div>
+    <div class="h4 mb-0">{{ gaps_total }}</div>
+    <a class="small" href="{% url 'reporting:gaps_csv' %}">выгрузка CSV →</a>
+  </div></div></div>
+  <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-secondary small">Просрочено обязательств</div>
+    <div class="h4 mb-0 text-danger">{{ overdue_total }}</div>
+    <a class="small" href="{% url 'reporting:overdue_csv' %}">выгрузка CSV →</a>
+  </div></div></div>
+  <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-secondary small">Unknown assets</div>
+    <div class="h4 mb-0">{{ unknown_assets }}</div>
+    <a class="small" href="{% url 'registry:unknown_assets' %}">разобрать →</a>
+  </div></div></div>
+  <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-secondary small">Evidence (истекает 30 дн.)</div>
+    <div class="h4 mb-0">{{ evidence_total }} <span class="text-secondary fs-6">/ {{ evidence_expiring }}</span></div>
+    <a class="small" href="{% url 'evidence:expiring' %}">к отчёту →</a>
+  </div></div></div>
+</div>
+
+<h2 class="h5">Состояние контролей: применимо, но не внедрено / не подтверждено</h2>
+<div class="card shadow-sm mb-4"><div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Код</th><th>Контроль</th><th>ИС</th><th>Статус</th><th>Ответственный</th><th>Следующая проверка</th></tr></thead>
+    <tbody>
+      {% for gap in gaps %}
+        <tr>
+          <td><code>{{ gap.control.code }}</code></td>
+          <td>{{ gap.control.name }}</td>
+          <td>{{ gap.system.name }}</td>
+          <td>{{ gap.get_status_display }}</td>
+          <td>{{ gap.owner_person|default:"—" }}</td>
+          <td>{{ gap.next_due_at|date:"d.m.Y"|default:"—" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="text-secondary">Пробелов нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<h2 class="h5">Просроченные обязательства</h2>
+<div class="card shadow-sm mb-4"><div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Обязательство</th><th>Срок</th><th>Владелец</th><th>Эскалация</th></tr></thead>
+    <tbody>
+      {% for item in overdue %}
+        <tr class="table-danger">
+          <td>{{ item.template.name }}</td>
+          <td>{{ item.due_at|date:"d.m.Y" }}</td>
+          <td>{{ item.owner_person|default:"—" }}</td>
+          <td>{% if item.escalation_level %}шаг {{ item.escalation_level }}{% else %}—{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="text-secondary">Просрочек нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<h2 class="h5">Покрытие evidence по видам</h2>
+<div class="card shadow-sm mb-4"><div class="table-responsive">
+  <table class="table table-sm mb-0">
+    <tbody>
+      {% for row in evidence_by_kind %}
+        <tr><td>{{ row.kind }}</td><td class="text-end">{{ row.total }}</td></tr>
+      {% empty %}
+        <tr><td class="text-secondary">Evidence пока нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<h2 class="h5">Оценки КЗИ/ПЗИ</h2>
+<div class="card shadow-sm"><div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Тип</th><th>Период</th><th>Статус</th><th>Результат</th><th>Вердикт</th><th></th></tr></thead>
+    <tbody>
+      {% for a in assessments %}
+        <tr>
+          <td>{{ a.get_assessment_type_display }}</td>
+          <td>{{ a.period_label|default:"—" }}</td>
+          <td>{{ a.get_status_display }}</td>
+          <td>{% if a.result_value is not None %}{{ a.result_value }}{% else %}—{% endif %}</td>
+          <td>{{ a.verdict|default:"—" }}</td>
+          <td class="text-end"><a class="btn btn-outline-secondary btn-sm" href="{% url 'kzi:detail' a.pk %}">Открыть</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="text-secondary">Оценок нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}
