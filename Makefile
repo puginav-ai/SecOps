@@ -3,7 +3,7 @@ COMPOSE := docker compose --env-file .env -f ops/compose.yaml
 RUN := $(COMPOSE) run --rm
 MOUNT := -v $(CURDIR):/app
 
-.PHONY: help up down build logs test lint fix verify check-deploy migrate makemigrations superuser shell backup restore-check scan-up
+.PHONY: help up down build logs test lint fix verify check-deploy migrate makemigrations superuser shell backup restore-check scan-up audit-list
 
 help:
 	@grep -E '^[a-zA-Z_-]+:' Makefile | cut -d: -f1 | sort
@@ -13,6 +13,9 @@ up:
 
 scan-up:
 	$(COMPOSE) --profile scan up -d collector
+
+audit-list:
+	$(RUN) $(MOUNT) web python ops/audit/export_machines.py
 
 down:
 	$(COMPOSE) down
