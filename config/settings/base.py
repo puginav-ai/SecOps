@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from celery.schedules import crontab
 
 from config.env import BASE_DIR, env, env_int, env_json, env_list, load_dotenv
@@ -28,6 +30,7 @@ INSTALLED_APPS = [
     "apps.evidence",
     "apps.obligations",
     "apps.notifications",
+    "apps.kzi",
 ]
 
 MIDDLEWARE = [
@@ -121,6 +124,10 @@ EVIDENCE_ALLOWED_EXTENSIONS = env_list(
     "EVIDENCE_ALLOWED_EXTENSIONS",
     "pdf,doc,docx,odt,rtf,txt,csv,xlsx,ods,xml,json,png,jpg,jpeg,zip,rar,7z,cfg,log",
 )
+
+# Пороги вердикта КЗИ (SDD §3.4; уточняются по Приложению В №10)
+KZI_VERDICT_HIGH = Decimal(env("KZI_VERDICT_HIGH", "0.95"))
+KZI_VERDICT_MEDIUM = Decimal(env("KZI_VERDICT_MEDIUM", "0.80"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

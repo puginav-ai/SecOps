@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Новая оценка КЗИ/ПЗИ{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">Новая оценка КЗИ/ПЗИ</h1>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Создать</button>
+      <a class="btn btn-outline-secondary" href="{% url 'kzi:list' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -13,5 +13,6 @@ urlpatterns = [
     path("evidence/", include("apps.evidence.urls")),
     path("obligations/", include("apps.obligations.urls")),
     path("notifications/", include("apps.notifications.urls")),
+    path("kzi/", include("apps.kzi.urls")),
     path("", include("apps.core.urls")),
 ]

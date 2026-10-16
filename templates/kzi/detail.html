@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}КЗИ: {{ assessment }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">
+  {{ assessment.get_assessment_type_display }} — {{ assessment.period_label|default:"без периода" }}
+</h1>
+<p class="text-secondary mb-3">
+  Статус: <strong>{{ assessment.get_status_display }}</strong>
+  {% if assessment.result_value is not None %}
+    · результат <strong>{{ assessment.result_value }}</strong> ({{ assessment.verdict }})
+  {% endif %}
+  · <a href="{% url 'kzi:list' %}">← Все оценки</a>
+</p>
+
+{% if can_edit and assessment.status != "closed" %}
+  <form method="post" action="{% url 'kzi:save_values' assessment.pk %}">
+    {% csrf_token %}
+    <div class="card shadow-sm mb-3">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="min-width: 260px">KPI</th>
+              {% for system in systems %}<th class="text-nowrap">{{ system.name }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in grid %}
+              <tr class="table-light">
+                <td colspan="{{ systems|length|add:1 }}">
+                  <strong>{{ row.group.name }}</strong>
+                  <span class="text-secondary small">· вес {{ row.group.weight_rj }}</span>
+                </td>
+              </tr>
+              {% for item_row in row.items %}
+                <tr>
+                  <td>
+                    {{ item_row.item.name }}
+                    {% if item_row.item.is_mandatory %}<span class="badge text-bg-danger">обязательный</span>{% endif %}
+                    <span class="text-secondary small">· макс {{ item_row.item.max_value }}</span>
+                  </td>
+                  {% for cell in item_row.cells %}
+                    <td>
+                      <input type="text" class="form-control form-control-sm mb-1" style="width: 90px"
+                             name="value-{{ cell.system.pk }}-{{ item_row.item.pk }}"
+                             value="{{ cell.stored.value|default_if_none:'' }}">
+                      <select class="form-select form-select-sm" name="evidence-{{ cell.system.pk }}-{{ item_row.item.pk }}"
+                              style="min-width: 160px">
+                        <option value="">evidence —</option>
+                        {% for evidence in evidences %}
+                          <option value="{{ evidence.pk }}" {% if cell.stored.evidence_id == evidence.pk %}selected{% endif %}>
+                            {{ evidence.title|truncatechars:44 }}
+                          </option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">Сохранить значения</button>
+  </form>
+  <form method="post" action="{% url 'kzi:close' assessment.pk %}" class="mt-2">
+    {% csrf_token %}
+    <button class="btn btn-success" type="submit">Закрыть оценку (расчёт и снапшот)</button>
+  </form>
+{% endif %}
+
+{% if preview %}
+  <h2 class="h5 mt-4">Расчёт{% if assessment.status != "closed" %} (предпросмотр){% endif %}</h2>
+  <p class="mb-2">
+    Итог: <strong>{{ preview.final }}</strong> — {{ preview.verdict }} ·
+    система-донор минимума: <strong>{{ preview.donor|default:"—" }}</strong>
+  </p>
+  {% for group in preview.groups %}
+    {% if group.cap %}<p class="text-secondary small mb-1">Кап группы {{ group.code }}: ≤ {{ group.cap }}</p>{% endif %}
+  {% endfor %}
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr><th>Группа</th><th>Вес</th><th>Оценка (донор)</th><th>Вклад в отставание</th><th>Слабые KPI</th></tr>
+        </thead>
+        <tbody>
+          {% for row in preview.why %}
+            <tr>
+              <td>{{ row.group }}</td>
+              <td>{{ row.weight }}</td>
+              <td>{{ row.score }}</td>
+              <td><strong>{{ row.gap }}</strong></td>
+              <td>
+                {% for item in row.items %}
+                  <div>
+                    {{ item.name }}:
+                    {% if item.value is None %}<span class="badge text-bg-warning">нет данных</span>{% else %}{{ item.value }}{% endif %}
+                    {% if item.evidence_id %}· <a href="{% url 'evidence:detail' item.evidence_id %}">evidence</a>{% endif %}
+                  </div>
+                {% empty %}
+                  —
+                {% endfor %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-secondary">Отставания нет — оценка максимальная.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+{% if assessment.status == "closed" and assessment.details.computed_at %}
+  <p class="text-secondary small mt-3 mb-0">
+    Снапшот расчёта сохранён: {{ assessment.details.computed_at|slice:":19" }}.
+  </p>
+{% endif %}
+{% endblock %}
