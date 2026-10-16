@@ -93,6 +93,7 @@ def apply_observations(segment: Segment, observations: Sequence[ObservedHost]) -
                 os_name=observed.os_name,
                 site=segment.site,
                 segment=segment,
+                discovery_source=observed.source,
                 ports=list(observed.ports),
                 last_seen_at=now,
             )

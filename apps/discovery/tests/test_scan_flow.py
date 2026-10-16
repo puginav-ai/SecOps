@@ -155,6 +155,7 @@ def test_scan_merges_passive_mikrotik_hosts(segment: Segment, monkeypatch, setti
     assert Asset.objects.get(ip="10.60.1.11").mac == "aa:bb:cc:00:00:11"  # MAC из ARP
     passive = Asset.objects.get(ip="10.60.1.99")  # чисто пассивный узел (nmap его не видел)
     assert (passive.hostname, passive.mac) == ("printer-demo", "aa:bb:cc:00:00:99")
+    assert passive.discovery_source == Asset.Source.MIKROTIK_API  # источник — роутер, а не nmap
 
 
 @freeze_time("2026-10-12 23:30:00+03:00")
