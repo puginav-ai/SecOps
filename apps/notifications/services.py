@@ -7,6 +7,7 @@ import logging
 
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
+from django.db import IntegrityError
 
 from apps.notifications.models import Notification
 
@@ -29,13 +30,28 @@ def _send_email(email: str, kind: str, message: str) -> None:
     )
 
 
+def _deliver(dedup_key: str, defaults: dict, *, email: str = "") -> int:
+    """Создаёт уведомление; дубли (в т.ч. гонки beat) не считаются ошибкой."""
+    try:
+        _notification, created = Notification.objects.get_or_create(
+            dedup_key=dedup_key, defaults=defaults
+        )
+    except IntegrityError:
+        return 0
+    if not created:
+        return 0
+    if email:
+        _send_email(email, defaults["kind"], defaults["message"])
+    return 1
+
+
 def notify_user(user, kind: str, message: str, *, instance=None, dedup_suffix: str = "") -> int:
     """Уведомление учётной записи: in-app + почта. Возвращает число новых отправок."""
     sent = 0
     base = f"{kind}:{getattr(instance, 'pk', '-')}:user{user.pk}:{dedup_suffix}"
-    _, created = Notification.objects.get_or_create(
-        dedup_key=f"{base}:in_app",
-        defaults={
+    sent += _deliver(
+        f"{base}:in_app",
+        {
             "recipient_user": user,
             "channel": Notification.Channel.IN_APP,
             "kind": kind,
@@ -43,21 +59,18 @@ def notify_user(user, kind: str, message: str, *, instance=None, dedup_suffix: s
             "instance": instance,
         },
     )
-    sent += int(created)
     if user.email:
-        _, created = Notification.objects.get_or_create(
-            dedup_key=f"{base}:email",
-            defaults={
+        sent += _deliver(
+            f"{base}:email",
+            {
                 "recipient_email": user.email,
                 "channel": Notification.Channel.EMAIL,
                 "kind": kind,
                 "message": message,
                 "instance": instance,
             },
+            email=user.email,
         )
-        if created:
-            _send_email(user.email, kind, message)
-            sent += 1
     return sent
 
 
@@ -66,9 +79,9 @@ def notify_person(person, kind: str, message: str, *, instance=None, dedup_suffi
     sent = 0
     base = f"{kind}:{getattr(instance, 'pk', '-')}:person{person.pk}:{dedup_suffix}"
     if person.user_id:
-        _, created = Notification.objects.get_or_create(
-            dedup_key=f"{base}:in_app",
-            defaults={
+        sent += _deliver(
+            f"{base}:in_app",
+            {
                 "recipient_user": person.user,
                 "channel": Notification.Channel.IN_APP,
                 "kind": kind,
@@ -76,21 +89,18 @@ def notify_person(person, kind: str, message: str, *, instance=None, dedup_suffi
                 "instance": instance,
             },
         )
-        sent += int(created)
     if person.email:
-        _, created = Notification.objects.get_or_create(
-            dedup_key=f"{base}:email",
-            defaults={
+        sent += _deliver(
+            f"{base}:email",
+            {
                 "recipient_email": person.email,
                 "channel": Notification.Channel.EMAIL,
                 "kind": kind,
                 "message": message,
                 "instance": instance,
             },
+            email=person.email,
         )
-        if created:
-            _send_email(person.email, kind, message)
-            sent += 1
     if not person.user_id and not person.email:
         logger.warning("recipient has no channels", extra={"person_id": person.pk})
     # Telegram/мессенджер: адаптеры каркасом — до получения реквизитов (Приложение В №4/№5)

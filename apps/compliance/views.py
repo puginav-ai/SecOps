@@ -82,9 +82,14 @@ def catalog(request):
 @role_required("compliance", "rw")
 def implementation_edit(request, pk: int):
     implementation = get_object_or_404(
-        ControlImplementation.objects.select_related("control", "system"), pk=pk
+        ControlImplementation.objects.filter(system__in=_visible_systems(request)).select_related(
+            "control", "system"
+        ),
+        pk=pk,
     )
-    form = ControlImplementationForm(request.POST or None, instance=implementation)
+    form = ControlImplementationForm(
+        request.POST or None, instance=implementation, user=request.user
+    )
     if request.method == "POST" and form.is_valid():
         candidate = form.save(commit=False)
         try:
@@ -113,9 +118,12 @@ def implementation_edit(request, pk: int):
 @role_required("compliance", "rw")
 def test_run_create(request, pk: int):
     implementation = get_object_or_404(
-        ControlImplementation.objects.select_related("control", "system"), pk=pk
+        ControlImplementation.objects.filter(system__in=_visible_systems(request)).select_related(
+            "control", "system"
+        ),
+        pk=pk,
     )
-    form = TestRunForm(request.POST or None, implementation=implementation)
+    form = TestRunForm(request.POST or None, implementation=implementation, user=request.user)
     if request.method == "POST" and form.is_valid():
         run = form.save(commit=False)
         run.system = implementation.system

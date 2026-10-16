@@ -84,6 +84,12 @@ def user_roles(user) -> set[str]:
 FULL_REGISTRY_ROLES = {"ib_admin", "ib_officer", "it_ops", "reader"}
 
 
+def is_owner_only(user) -> bool:
+    """True, если пользователь — только владелец ИС (видит лишь свои системы, SDD §4)."""
+    roles = user_roles(user)
+    return "system_owner" in roles and not roles & FULL_REGISTRY_ROLES
+
+
 def module_access(user, module: str) -> str:
     """Итоговый доступ к модулю: максимум по ролям; суперпользователь — «rw» везде."""
     if not user.is_authenticated:

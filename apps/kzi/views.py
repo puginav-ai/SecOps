@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.core.access import module_access, role_required
+from apps.core.export import csv_response
 from apps.evidence.models import EvidenceObject
 from apps.kzi import services
 from apps.kzi.forms import AssessmentForm
@@ -170,22 +170,18 @@ def task_set_status(request, plan_id: int, task_id: int):
 
 @role_required("kzi")
 def plan_export_csv(request, pk: int):
-    """Выгрузка плана мероприятий (CSV для Excel: BOM + разделитель ';')."""
+    """Выгрузка плана мероприятий (CSV, защита от инъекций — общий экспорт)."""
     plan = get_object_or_404(RemediationPlan.objects.select_related("assessment"), pk=pk)
-    lines = ["ИС;KPI;Задача;Ответственный;Срок;Статус"]
-    for task in plan.tasks.select_related("system", "kpi_item", "owner_person"):
-        lines.append(
-            ";".join(
-                [
-                    task.system.name if task.system else "—",
-                    task.kpi_item.code if task.kpi_item else "—",
-                    task.title.replace(";", ","),
-                    str(task.owner_person) if task.owner_person else "—",
-                    task.due_at.strftime("%d.%m.%Y") if task.due_at else "—",
-                    task.get_status_display(),
-                ]
-            )
-        )
-    response = HttpResponse("\ufeff" + "\n".join(lines), content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="plan-{plan.pk}.csv"'
-    return response
+    rows = [
+        [
+            task.system.name if task.system else "—",
+            task.kpi_item.code if task.kpi_item else "—",
+            task.title,
+            str(task.owner_person) if task.owner_person else "—",
+            task.due_at.strftime("%d.%m.%Y") if task.due_at else "—",
+            task.get_status_display(),
+        ]
+        for task in plan.tasks.select_related("system", "kpi_item", "owner_person")
+    ]
+    header = ["ИС", "KPI", "Задача", "Ответственный", "Срок", "Статус"]
+    return csv_response(f"plan-{plan.pk}.csv", header, rows)

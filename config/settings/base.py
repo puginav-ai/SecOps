@@ -106,7 +106,9 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 # Файловое хранилище evidence (неделя 5): по умолчанию локальное, в проде — S3 (SeaweedFS).
 MEDIA_ROOT = BASE_DIR / "media"
-EVIDENCE_STORAGE_BACKEND = env("EVIDENCE_STORAGE", "django.core.files.storage.FileSystemStorage")
+EVIDENCE_STORAGE_BACKEND = (
+    env("EVIDENCE_STORAGE", "") or "django.core.files.storage.FileSystemStorage"
+)
 STORAGES = {
     "default": {"BACKEND": EVIDENCE_STORAGE_BACKEND},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

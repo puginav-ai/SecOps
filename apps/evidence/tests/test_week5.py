@@ -101,21 +101,26 @@ def test_upload_and_download_views(client, login, make_user) -> None:
 
 
 def test_link_view_and_dedup(client, login, make_user) -> None:
+    from apps.registry.models import Person, System
+
     evidence = EvidenceObject.objects.create(title="Акт2", file=upload_file())
+    system = System.objects.create(
+        name="ИС-Связь", owner_person=Person.objects.create(fio="Владелец Связи")
+    )
     client = login(make_user("officer-link", role="ib_officer"))
 
     response = client.post(
         f"/evidence/{evidence.pk}/link/",
-        {"entity_type": "system", "entity_id": 42, "role": "proof"},
+        {"entity_type": "system", "entity_id": system.pk, "role": "proof"},
     )
     assert response.status_code == 302
     assert EvidenceLink.objects.filter(
-        evidence=evidence, entity_type="system", entity_id=42
+        evidence=evidence, entity_type="system", entity_id=system.pk
     ).exists()
 
     client.post(
         f"/evidence/{evidence.pk}/link/",
-        {"entity_type": "system", "entity_id": 42, "role": "proof"},
+        {"entity_type": "system", "entity_id": system.pk, "role": "proof"},
         follow=True,
     )
     assert EvidenceLink.objects.filter(evidence=evidence).count() == 1

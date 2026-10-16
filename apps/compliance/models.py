@@ -157,6 +157,14 @@ class ControlImplementation(models.Model):
     last_test_at = models.DateTimeField("последняя проверка", null=True, blank=True)
     next_due_at = models.DateTimeField("следующая проверка", null=True, blank=True)
     exception_note = models.TextField("обоснование исключения", blank=True, default="")
+    exception_evidence = models.ForeignKey(
+        "evidence.EvidenceObject",
+        verbose_name="evidence решения руководителя",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="exception_implementations",
+    )
     exception_approved_at = models.DateTimeField("исключение утверждено", null=True, blank=True)
     exception_review_at = models.DateTimeField("пересмотр исключения", null=True, blank=True)
 

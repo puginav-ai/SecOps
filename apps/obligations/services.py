@@ -123,7 +123,9 @@ def run_escalations(now) -> int:
                             dedup_suffix=f"step{step_number}",
                         )
                 elif "role" in recipient:
-                    users = get_user_model().objects.filter(groups__name=recipient["role"])
+                    users = get_user_model().objects.filter(
+                        groups__name=recipient["role"], is_active=True
+                    )
                     for user in users:
                         sent += notify_user(
                             user,

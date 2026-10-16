@@ -146,7 +146,7 @@ def system_create(request):
 
 @role_required("registry", "rw")
 def system_edit(request, pk: int):
-    system = get_object_or_404(System, pk=pk)
+    system = get_object_or_404(_visible_systems(request), pk=pk)
     form = SystemForm(request.POST or None, instance=system)
     if request.method == "POST" and form.is_valid():
         form.save()

@@ -61,6 +61,8 @@ def validate_status(implementation: ControlImplementation, new_status: str, user
             raise ValidationError("Исключение может выставить только ИБ-админ")
         if not implementation.exception_note or not implementation.exception_review_at:
             raise ValidationError("Для исключения нужны обоснование и срок пересмотра")
+        if implementation.exception_evidence_id is None:
+            raise ValidationError("Для исключения нужен evidence решения руководства (SDD §4)")
 
 
 def set_status(implementation: ControlImplementation, new_status: str, user) -> None:

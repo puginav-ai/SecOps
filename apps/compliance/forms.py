@@ -6,6 +6,7 @@ from django import forms
 from django.utils import timezone
 
 from apps.compliance.models import ControlImplementation, TestRun
+from apps.evidence.services import visible_evidence
 
 
 class ControlImplementationForm(forms.ModelForm):
@@ -19,6 +20,7 @@ class ControlImplementationForm(forms.ModelForm):
             "status",
             "owner_person",
             "exception_note",
+            "exception_evidence",
             "exception_review_at",
         ]
         widgets = {
@@ -26,6 +28,11 @@ class ControlImplementationForm(forms.ModelForm):
                 attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
             ),
         }
+
+    def __init__(self, *args, user=None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        if user is not None:
+            self.fields["exception_evidence"].queryset = visible_evidence(user)
 
 
 class TestRunForm(forms.ModelForm):
@@ -43,8 +50,14 @@ class TestRunForm(forms.ModelForm):
         fields = ["test", "run_at", "result", "evidence", "notes"]
 
     def __init__(
-        self, *args, implementation: ControlImplementation | None = None, **kwargs
+        self,
+        *args,
+        implementation: ControlImplementation | None = None,
+        user=None,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         if implementation is not None:
             self.fields["test"].queryset = implementation.control.tests.all()
+        if user is not None:
+            self.fields["evidence"].queryset = visible_evidence(user)

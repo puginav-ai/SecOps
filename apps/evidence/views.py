@@ -14,6 +14,7 @@ from django.utils import timezone
 from apps.core.access import module_access, role_required, user_roles
 from apps.evidence.forms import EvidenceLinkForm, EvidenceUploadForm
 from apps.evidence.models import EvidenceObject
+from apps.evidence.services import visible_evidence
 
 # Роли, которым разрешено скачивание файлов evidence (SDD §4: «reader» — метаданные, без файлов)
 DOWNLOAD_ROLES = {"ib_admin", "ib_officer", "it_ops", "system_owner"}
@@ -25,7 +26,7 @@ def _may_download(user) -> bool:
 
 @role_required("evidence")
 def evidence_list(request):
-    objects = EvidenceObject.objects.select_related("uploaded_by")
+    objects = visible_evidence(request.user).select_related("uploaded_by")
     kind = request.GET.get("kind", "")
     if kind:
         objects = objects.filter(kind=kind)
@@ -56,7 +57,9 @@ def evidence_upload(request):
 
 @role_required("evidence")
 def evidence_detail(request, pk: int):
-    evidence = get_object_or_404(EvidenceObject.objects.select_related("uploaded_by"), pk=pk)
+    evidence = get_object_or_404(
+        visible_evidence(request.user).select_related("uploaded_by"), pk=pk
+    )
     links = evidence.links.all()
     return render(
         request,
@@ -75,7 +78,7 @@ def evidence_detail(request, pk: int):
 def evidence_download(request, pk: int):
     if not _may_download(request.user):
         raise PermissionDenied
-    evidence = get_object_or_404(EvidenceObject, pk=pk)
+    evidence = get_object_or_404(visible_evidence(request.user), pk=pk)
     file_handle = evidence.file.open("rb")
     filename = evidence.filename or Path(evidence.file.name).name
     return FileResponse(file_handle, as_attachment=True, filename=filename)
@@ -83,7 +86,7 @@ def evidence_download(request, pk: int):
 
 @role_required("evidence", "rw")
 def evidence_link_add(request, pk: int):
-    evidence = get_object_or_404(EvidenceObject, pk=pk)
+    evidence = get_object_or_404(visible_evidence(request.user), pk=pk)
     form = EvidenceLinkForm(request.POST, evidence=evidence)
     if form.is_valid():
         link = form.save(commit=False)
@@ -98,11 +101,17 @@ def evidence_link_add(request, pk: int):
 @role_required("evidence")
 def evidence_expiring(request):
     """Отчёт «evidence истекает через N дней» (SDD §5.4)."""
-    days = int(request.GET.get("days", "30") or 30)
+    try:
+        days = int(request.GET.get("days", "30") or 30)
+    except ValueError:
+        days = 30
+    days = max(1, min(days, 365))
     limit = timezone.localdate() + timedelta(days=days)
-    objects = EvidenceObject.objects.filter(
-        valid_until__isnull=False, valid_until__lte=limit
-    ).order_by("valid_until")
+    objects = (
+        visible_evidence(request.user)
+        .filter(valid_until__isnull=False, valid_until__lte=limit)
+        .order_by("valid_until")
+    )
     return render(
         request,
         "evidence/expiring.html",

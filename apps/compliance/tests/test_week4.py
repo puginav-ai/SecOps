@@ -8,6 +8,7 @@ from datetime import timedelta
 import pytest
 from django.apps import apps as django_apps
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from freezegun import freeze_time
 
@@ -20,6 +21,7 @@ from apps.compliance.models import (
     RequirementControlMap,
     TestRun,
 )
+from apps.evidence.models import EvidenceObject
 from apps.registry.models import Person, System
 
 pytestmark = pytest.mark.django_db
@@ -126,6 +128,12 @@ def test_exception_requires_admin_and_review(
 
     implementation.exception_note = "Решение руководства от 01.10.2026"
     implementation.exception_review_at = timezone.now() + timedelta(days=180)
+    with pytest.raises(ValidationError):  # нет evidence решения (SDD §4)
+        services.set_status(implementation, ControlImplementation.Status.EXCEPTION, admin)
+
+    implementation.exception_evidence = EvidenceObject.objects.create(
+        title="Решение руководства", file=SimpleUploadedFile("decision.pdf", b"x")
+    )
     services.set_status(implementation, ControlImplementation.Status.EXCEPTION, admin)
     implementation.refresh_from_db()
 
