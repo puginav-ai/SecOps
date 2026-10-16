@@ -56,7 +56,7 @@ def test_new_hosts_become_assets_with_new_events(segment: Segment) -> None:
     assert AssetEvent.objects.filter(kind=AssetEvent.Kind.NEW).count() == 2
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_same_mac_and_ip_only_updates_last_seen(segment: Segment) -> None:
     services.apply_observations(segment, [host("10.60.1.10", mac=MAC_A)])
     with freeze_time("2026-10-12 23:40:00+03:00"):
@@ -181,7 +181,7 @@ def test_asset_follows_mac_into_another_segment(segment: Segment) -> None:
 # --- окно скана и расписание ----------------------------------------------------------
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_is_scan_allowed_respects_flag_and_window(segment: Segment) -> None:
     now = timezone.localtime()
     assert services.is_scan_allowed(segment, now) == (True, "")
@@ -197,7 +197,7 @@ def test_is_scan_allowed_respects_flag_and_window(segment: Segment) -> None:
     assert services.is_scan_allowed(segment, now) == (False, "bad_window")
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_due_segments_selects_only_enabled_due_in_window(segment: Segment) -> None:
     now = timezone.localtime()
     assert services.due_segments(now) == [segment]
@@ -215,6 +215,6 @@ def test_due_segments_selects_only_enabled_due_in_window(segment: Segment) -> No
     assert services.due_segments(now) == []
 
 
-@freeze_time("2026-10-12 12:00:00+03:00")
+@freeze_time("2026-10-12 16:00:00+03:00")
 def test_due_segments_skips_closed_window(segment: Segment) -> None:
     assert services.due_segments(timezone.localtime()) == []

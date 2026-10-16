@@ -42,7 +42,7 @@ def forbid_nmap(monkeypatch) -> None:
     monkeypatch.setattr("apps.discovery.scanner.run_nmap", boom)
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_scan_creates_run_assets_and_updates_segment(segment: Segment, monkeypatch) -> None:
     calls = patch_nmap(monkeypatch, [SWEEP_XML])
 
@@ -59,7 +59,7 @@ def test_scan_creates_run_assets_and_updates_segment(segment: Segment, monkeypat
     assert calls == [["nmap", "-sn", "-n", "-T3", "10.60.1.0/24"]]
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_top100_profile_enriches_ports_and_os(segment: Segment, monkeypatch) -> None:
     segment.scan_profile = Segment.ScanProfile.TOP100
     segment.save(update_fields=["scan_profile"])
@@ -73,7 +73,7 @@ def test_top100_profile_enriches_ports_and_os(segment: Segment, monkeypatch) -> 
     assert (srv.ports, srv.os_name, srv.hostname) == ([22, 443], "Linux 5.4", "srv-demo")
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_disabled_segment_is_refused_without_scan(segment: Segment, monkeypatch) -> None:
     segment.scan_enabled = False
     segment.save(update_fields=["scan_enabled"])
@@ -97,7 +97,7 @@ def test_scan_outside_window_is_refused(segment: Segment, monkeypatch) -> None:
     assert ScanRun.objects.count() == 0
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_scan_error_marks_run_failed(segment: Segment, monkeypatch) -> None:
     def boom(args, timeout=600):
         raise ScanError("nmap недоступен")
@@ -114,7 +114,7 @@ def test_scan_error_marks_run_failed(segment: Segment, monkeypatch) -> None:
     assert segment.last_scan_at is None
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_scan_due_segments_scans_once_per_interval(segment: Segment, monkeypatch) -> None:
     patch_nmap(monkeypatch, [SWEEP_XML])
 
@@ -125,7 +125,7 @@ def test_scan_due_segments_scans_once_per_interval(segment: Segment, monkeypatch
     assert ScanRun.objects.count() == 1
 
 
-@freeze_time("2026-10-12 12:00:00+03:00")
+@freeze_time("2026-10-12 16:00:00+03:00")
 def test_scan_due_segments_does_nothing_outside_window(segment: Segment, monkeypatch) -> None:
     forbid_nmap(monkeypatch)
 
@@ -133,7 +133,7 @@ def test_scan_due_segments_does_nothing_outside_window(segment: Segment, monkeyp
     assert ScanRun.objects.count() == 0
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_scan_merges_passive_mikrotik_hosts(segment: Segment, monkeypatch, settings) -> None:
     settings.MIKROTIK_HOST = "192.0.2.2"
     patch_nmap(monkeypatch, [SWEEP_XML])
@@ -158,7 +158,7 @@ def test_scan_merges_passive_mikrotik_hosts(segment: Segment, monkeypatch, setti
     assert passive.discovery_source == Asset.Source.MIKROTIK_API  # источник — роутер, а не nmap
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_scan_survives_router_outage(segment: Segment, monkeypatch, settings) -> None:
     settings.MIKROTIK_HOST = "192.0.2.2"
     patch_nmap(monkeypatch, [SWEEP_XML])
@@ -174,7 +174,7 @@ def test_scan_survives_router_outage(segment: Segment, monkeypatch, settings) ->
     assert Asset.objects.count() == 2
 
 
-@freeze_time("2026-10-12 23:30:00+03:00")
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_scan_skips_router_when_not_configured(segment: Segment, monkeypatch, settings) -> None:
     settings.MIKROTIK_HOST = ""
     patch_nmap(monkeypatch, [SWEEP_XML])
