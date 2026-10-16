@@ -44,6 +44,29 @@ def test_segments_page_requires_login(client) -> None:
     assert "/accounts/login/" in response["Location"]
 
 
+def test_open_mode_allows_anonymous_read_and_write(client, settings, site: Site) -> None:
+    """Временный dev-режим (ADR §4): реестр открыт без входа — чтение и правка."""
+    settings.REGISTRY_OPEN_ACCESS = True
+
+    assert client.get("/registry/").status_code == 200
+    assert client.get("/registry/assets/").status_code == 200
+
+    response = client.post("/registry/segments/new/", create_payload(site))
+
+    assert response.status_code == 302
+    assert Segment.objects.count() == 1
+
+
+def test_open_mode_keeps_rbac_for_authenticated_users(
+    login, make_user, settings, site: Site
+) -> None:
+    settings.REGISTRY_OPEN_ACCESS = True
+    client = login(make_user("reader", role="reader"))
+
+    # вошедшему «Руководству» режим ничего не расширяет: запись по-прежнему запрещена
+    assert client.post("/registry/segments/new/", create_payload(site)).status_code == 403
+
+
 def test_reader_can_view_but_not_edit(login, make_user, segment: Segment, site: Site) -> None:
     client = login(make_user("reader", role="reader"))
 

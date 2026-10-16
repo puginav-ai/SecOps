@@ -10,7 +10,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import wraps
 
-from django.contrib.auth.decorators import login_required
+from django.conf import settings
+from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import PermissionDenied
 
 MODULES: dict[str, str] = {
@@ -82,6 +83,9 @@ def user_roles(user) -> set[str]:
 def module_access(user, module: str) -> str:
     """Итоговый доступ к модулю: максимум по ролям; суперпользователь — «rw» везде."""
     if not user.is_authenticated:
+        # временный dev-режим: реестр открыт без входа (ADR §4), остальные модули — нет
+        if module == "registry" and settings.REGISTRY_OPEN_ACCESS:
+            return "rw"
         return ""
     if user.is_superuser:
         return "rw"
@@ -103,14 +107,18 @@ def user_modules(user) -> list[tuple[str, str]]:
 def role_required(module: str, level: str = "r") -> Callable:
     """Пускает во view, если доступ к модулю не ниже level ("r" | "rw").
 
-    Анонимные пользователи перенаправляются на логин (login_required),
-    авторизованные без доступа — 403 (PermissionDenied).
+    Анонимные пользователи перенаправляются на логин, авторизованные без доступа —
+    403 (PermissionDenied). Исключение: временный dev-режим REGISTRY_OPEN_ACCESS
+    открывает модуль registry анонимам (ADR §4); для вошедших матрица ролей не меняется.
     """
 
     def decorator(view_func: Callable) -> Callable:
-        @login_required
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                if module == "registry" and settings.REGISTRY_OPEN_ACCESS:
+                    return view_func(request, *args, **kwargs)
+                return redirect_to_login(request.get_full_path())
             access = module_access(request.user, module)
             if not (access == "rw" or (level == "r" and access == "r")):
                 raise PermissionDenied
