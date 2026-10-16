@@ -119,6 +119,12 @@ EMAIL_BACKEND = (
     else "django.core.mail.backends.console.EmailBackend"
 )
 
+# Пассивное обнаружение через RouterOS API (Приложение В №2): MIKROTIK_HOST пуст → выключено.
+MIKROTIK_HOST = env("MIKROTIK_HOST", "")
+MIKROTIK_API_USER = env("MIKROTIK_API_USER", "admin")
+MIKROTIK_API_PASSWORD = env("MIKROTIK_API_PASSWORD", "")
+MIKROTIK_API_SSL = env("MIKROTIK_API_SSL", "0") != "0"
+
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL

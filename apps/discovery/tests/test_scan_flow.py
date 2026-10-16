@@ -9,6 +9,7 @@ from apps.discovery import tasks
 from apps.discovery.models import ScanRun
 from apps.discovery.tests.samples import DETAIL_XML, SWEEP_XML
 from apps.registry.models import Asset, Segment, Site
+from collector.mikrotik import RouterData
 from collector.runner import ScanError
 
 pytestmark = pytest.mark.django_db
@@ -130,3 +131,57 @@ def test_scan_due_segments_does_nothing_outside_window(segment: Segment, monkeyp
 
     assert tasks.scan_due_segments() == 0
     assert ScanRun.objects.count() == 0
+
+
+@freeze_time("2026-10-12 23:30:00+03:00")
+def test_scan_merges_passive_mikrotik_hosts(segment: Segment, monkeypatch, settings) -> None:
+    settings.MIKROTIK_HOST = "192.0.2.2"
+    patch_nmap(monkeypatch, [SWEEP_XML])
+    monkeypatch.setattr(
+        "apps.discovery.scanner.fetch_router_data",
+        lambda *args, **kwargs: RouterData(
+            arp=(
+                {"address": "10.60.1.11", "mac-address": "AA:BB:CC:00:00:11"},
+                {"address": "10.60.1.99", "mac-address": "AA:BB:CC:00:00:99"},
+            ),
+            leases=({"mac-address": "AA:BB:CC:00:00:99", "host-name": "printer-demo"},),
+        ),
+    )
+
+    result = tasks.scan_segment(segment.pk)
+
+    assert result["status"] == "ok"
+    assert (result["seen"], result["new"]) == (3, 3)
+    assert Asset.objects.get(ip="10.60.1.11").mac == "aa:bb:cc:00:00:11"  # MAC из ARP
+    passive = Asset.objects.get(ip="10.60.1.99")  # чисто пассивный узел (nmap его не видел)
+    assert (passive.hostname, passive.mac) == ("printer-demo", "aa:bb:cc:00:00:99")
+
+
+@freeze_time("2026-10-12 23:30:00+03:00")
+def test_scan_survives_router_outage(segment: Segment, monkeypatch, settings) -> None:
+    settings.MIKROTIK_HOST = "192.0.2.2"
+    patch_nmap(monkeypatch, [SWEEP_XML])
+
+    def boom(*args, **kwargs):
+        raise OSError("router unreachable")
+
+    monkeypatch.setattr("apps.discovery.scanner.fetch_router_data", boom)
+
+    result = tasks.scan_segment(segment.pk)
+
+    assert result["status"] == "ok"  # скан не падает из-за недоступного роутера
+    assert Asset.objects.count() == 2
+
+
+@freeze_time("2026-10-12 23:30:00+03:00")
+def test_scan_skips_router_when_not_configured(segment: Segment, monkeypatch, settings) -> None:
+    settings.MIKROTIK_HOST = ""
+    patch_nmap(monkeypatch, [SWEEP_XML])
+
+    def boom(*args, **kwargs):
+        raise AssertionError("адаптер не должен вызываться без MIKROTIK_HOST")
+
+    monkeypatch.setattr("apps.discovery.scanner.fetch_router_data", boom)
+
+    assert tasks.scan_segment(segment.pk)["status"] == "ok"
+    assert Asset.objects.count() == 2

@@ -1,0 +1,111 @@
+"""Пассивное обнаружение через RouterOS API (Mikrotik): ARP-таблица и DHCP-аренды (SDD §5.2).
+
+Только чтение (`/ip/arp`, `/ip/dhcp-server/lease`). Преобразование строк — чистые функции
+(тестируются без сети); единственный сетевой вызов — fetch_router_data (подменяется в тестах).
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import ssl
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
+
+from collector.nmap import ObservedHost
+
+ZERO_MAC = "00:00:00:00:00:00"
+
+
+@dataclass(frozen=True)
+class RouterData:
+    """Выгрузка роутера: строки ARP и действующие DHCP-аренды."""
+
+    arp: tuple[Mapping[str, str], ...] = ()
+    leases: tuple[Mapping[str, str], ...] = ()
+
+
+def fetch_router_data(
+    host: str,
+    username: str,
+    password: str,
+    *,
+    use_ssl: bool = False,
+    timeout: float = 10.0,
+) -> RouterData:
+    """Читает ARP и DHCP-аренды через RouterOS API. Ошибки обрабатывает вызывающий."""
+    import librouteros  # импорт ленивый: без Mikrotik приложение живёт и без библиотеки
+
+    kwargs: dict = {"port": 8729 if use_ssl else 8728, "timeout": timeout}
+    if use_ssl:
+        # роутер в контуре — обычно с самоподписанным сертификатом: цепочку не проверяем
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        kwargs["ssl_wrapper"] = context
+
+    api = librouteros.connect(host, username, password, **kwargs)
+    try:
+        arp = tuple(dict(row) for row in api.path("ip", "arp"))
+        leases = tuple(
+            dict(row)
+            for row in api.path("ip", "dhcp-server", "lease")
+            if row.get("status") == "bound"
+        )
+    finally:
+        api.close()
+    return RouterData(arp=arp, leases=leases)
+
+
+def arp_hosts(rows: Iterable[Mapping[str, str]], cidr: str) -> list[ObservedHost]:
+    """ARP-строки → узлы внутри подсети. Пустой/нулевой MAC и не-IP адреса пропускаются."""
+    network = ipaddress.ip_network(cidr, strict=False)
+    hosts: list[ObservedHost] = []
+    for row in rows:
+        ip = str(row.get("address", "")).strip()
+        mac = str(row.get("mac-address", "")).strip().lower()
+        if not ip or not mac or mac == ZERO_MAC:
+            continue
+        try:
+            if ipaddress.ip_address(ip) not in network:
+                continue
+        except ValueError:
+            continue
+        hosts.append(ObservedHost(ip=ip, mac=mac, source="mikrotik_api"))
+    return hosts
+
+
+def hostnames_by_mac(leases: Iterable[Mapping[str, str]]) -> dict[str, str]:
+    """Имена из DHCP-аренд: MAC → host-name (заглушки вида «-» и пустые пропускаются)."""
+    names: dict[str, str] = {}
+    for row in leases:
+        mac = str(row.get("mac-address", "")).strip().lower()
+        name = str(row.get("host-name", "")).strip()
+        if mac and name and name != "-":
+            names[mac] = name
+    return names
+
+
+def merge_observations(
+    observed: list[ObservedHost],
+    passive: list[ObservedHost],
+    leases: Iterable[Mapping[str, str]] = (),
+) -> list[ObservedHost]:
+    """Данные nmap главнее: MAC/имя дополняются из ARP/DHCP, узлы только из ARP добавляются.
+
+    Порты и ОС nmap не затираются: у ARP-строки их просто нет.
+    """
+    names = hostnames_by_mac(leases)
+    passive_by_ip = {host.ip: host for host in passive}
+    merged: list[ObservedHost] = []
+    seen: set[str] = set()
+    for host in observed:
+        extra = passive_by_ip.get(host.ip)
+        mac = host.mac or (extra.mac if extra else None)
+        merged.append(replace(host, mac=mac, hostname=host.hostname or names.get(mac or "", "")))
+        seen.add(host.ip)
+    for host in passive:
+        if host.ip in seen:
+            continue
+        seen.add(host.ip)
+        merged.append(replace(host, hostname=names.get(host.mac or "", "")))
+    return merged

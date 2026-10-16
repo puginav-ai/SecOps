@@ -1,11 +1,17 @@
-"""Сбор наблюдений сегмента: ICMP-sweep и порт-скан по профилю (SDD §5.2).
+"""Сбор наблюдений сегмента: ICMP-sweep, порт-скан по профилю и пассивный сбор с Mikrotik.
 
-Единственная точка внешних вызовов — collector.runner.run_nmap (подменяется в тестах).
+Внешние вызовы — collector.runner.run_nmap и collector.mikrotik.fetch_router_data
+(оба подменяются в тестах).
 """
 
 from __future__ import annotations
 
+import logging
+
+from django.conf import settings
+
 from apps.registry.models import Segment
+from collector.mikrotik import RouterData, arp_hosts, fetch_router_data, merge_observations
 from collector.nmap import (
     ObservedHost,
     build_service_args,
@@ -14,6 +20,27 @@ from collector.nmap import (
     parse_nmap_xml,
 )
 from collector.runner import run_nmap
+
+logger = logging.getLogger(__name__)
+
+
+def passive_hosts(segment: Segment) -> tuple[list[ObservedHost], RouterData | None]:
+    """Узлы из ARP роутера в подсети сегмента. Роутер не настроен/недоступен → пусто."""
+    if not settings.MIKROTIK_HOST:
+        return [], None
+    try:
+        data = fetch_router_data(
+            settings.MIKROTIK_HOST,
+            settings.MIKROTIK_API_USER,
+            settings.MIKROTIK_API_PASSWORD,
+            use_ssl=settings.MIKROTIK_API_SSL,
+        )
+    except Exception:  # сетевой сбой не должен валить скан: сегмент сканируется как раньше
+        logger.exception(
+            "mikrotik api unavailable", extra={"segment_id": segment.pk, "cidr": segment.cidr}
+        )
+        return [], None
+    return arp_hosts(data.arp, segment.cidr), data
 
 
 def collect_observations(segment: Segment) -> list[ObservedHost]:
@@ -30,4 +57,7 @@ def collect_observations(segment: Segment) -> list[ObservedHost]:
         # узел, «потерянный» при детальном скане, остаётся живым из свипа
         alive = [detailed.get(host.ip, host) for host in alive]
 
+    passive, data = passive_hosts(segment)
+    if passive:
+        alive = merge_observations(alive, passive, data.leases if data else ())
     return alive
