@@ -7,7 +7,7 @@ from datetime import time
 
 from django import forms
 
-from apps.registry.models import Segment, default_scan_window
+from apps.registry.models import Person, Segment, System, SystemComponent, default_scan_window
 
 WEEKDAYS = [
     (0, "Пн"),
@@ -80,3 +80,54 @@ class SegmentForm(forms.ModelForm):
     def save(self, commit: bool = True) -> Segment:
         self.instance.scan_window = self.cleaned_data["scan_window"]
         return super().save(commit=commit)
+
+
+class SystemForm(forms.ModelForm):
+    """ИС: владелец обязателен (неделя 3 — «запрет сохранения ИС без владельца»)."""
+
+    owner_person = forms.ModelChoiceField(
+        label="Владелец", queryset=Person.objects.order_by("fio"), required=True
+    )
+
+    class Meta:
+        model = System
+        fields = [
+            "name",
+            "system_type",
+            "site",
+            "control_authority",
+            "owner_person",
+            "operator_org",
+            "has_pdn",
+            "kii_scope",
+            "criticality",
+            "status",
+            "notes",
+        ]
+
+
+class PersonForm(forms.ModelForm):
+    class Meta:
+        model = Person
+        fields = ["fio", "position", "phone", "email", "user"]
+
+
+class SystemComponentForm(forms.ModelForm):
+    """Привязка актива к ИС; дубликат пары (ИС, актив) отклоняется."""
+
+    class Meta:
+        model = SystemComponent
+        fields = ["asset", "role", "note"]
+
+    def __init__(self, *args, system: System | None = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.system = system
+
+    def clean_asset(self):
+        asset = self.cleaned_data["asset"]
+        if (
+            self.system is not None
+            and SystemComponent.objects.filter(system=self.system, asset=asset).exists()
+        ):
+            raise forms.ValidationError("Этот актив уже привязан к ИС")
+        return asset

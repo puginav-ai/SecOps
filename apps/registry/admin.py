@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.contrib import admin
 
-from apps.registry.models import Asset, AssetEvent, Person, Segment, Site
+from apps.registry.models import Asset, AssetEvent, Person, Segment, Site, System, SystemComponent
 
 
 @admin.register(Site)
@@ -17,6 +17,22 @@ class SiteAdmin(admin.ModelAdmin):
 class PersonAdmin(admin.ModelAdmin):
     list_display = ["fio", "position", "phone", "email", "user"]
     search_fields = ["fio", "email"]
+
+
+@admin.register(System)
+class SystemAdmin(admin.ModelAdmin):
+    list_display = ["name", "system_type", "site", "owner_person", "control_authority", "status"]
+    list_filter = ["system_type", "control_authority", "status", "criticality"]
+    search_fields = ["name", "operator_org"]
+    autocomplete_fields = ["owner_person", "site"]
+
+
+@admin.register(SystemComponent)
+class SystemComponentAdmin(admin.ModelAdmin):
+    list_display = ["system", "asset", "role"]
+    list_filter = ["role"]
+    search_fields = ["system__name", "asset__ip", "asset__hostname"]
+    autocomplete_fields = ["system", "asset"]
 
 
 @admin.register(Segment)

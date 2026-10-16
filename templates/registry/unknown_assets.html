@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Unknown assets{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Unknown assets</h1>
+<p class="text-secondary mb-3">
+  Активы без привязки к ИС и без ответственного: {{ total }}.
+  Разобрать — привязать к ИС или назначить владельца.
+  <a href="{% url 'registry:asset_list' %}">← Активы</a>
+  <a href="{% url 'registry:system_list' %}">ИС →</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>IP</th><th>MAC</th><th>Имя</th><th>Сегмент</th>
+          <th>Обнаружен</th><th>Последний раз</th><th>Статус</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assets %}
+          <tr>
+            <td><code>{{ a.ip }}</code></td>
+            <td>{{ a.mac|default:"—" }}</td>
+            <td>{{ a.hostname|default:"—" }}</td>
+            <td>{{ a.segment|default:"—" }}</td>
+            <td>{{ a.first_seen_at|date:"d.m.Y H:i" }}</td>
+            <td>{{ a.last_seen_at|date:"d.m.Y H:i" }}</td>
+            <td>
+              {% if a.miss_count >= miss_threshold %}
+                <span class="badge text-bg-danger">пропал</span>
+              {% else %}
+                <span class="badge text-bg-success">в сети</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-secondary">Отлично: все обнаруженные активы распределены.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

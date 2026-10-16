@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ system.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">{{ system.name }}</h1>
+  {% if can_edit %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'registry:system_edit' system.pk %}">Изменить</a>
+  {% endif %}
+</div>
+<p class="text-secondary mb-3"><a href="{% url 'registry:system_list' %}">← Все ИС</a></p>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Тип</dt><dd class="col-sm-9">{{ system.get_system_type_display }}</dd>
+      <dt class="col-sm-3">Площадка</dt><dd class="col-sm-9">{{ system.site|default:"—" }}</dd>
+      <dt class="col-sm-3">Владелец</dt><dd class="col-sm-9">{{ system.owner_person|default:"— уточнить" }}</dd>
+      <dt class="col-sm-3">Контроль</dt><dd class="col-sm-9">{{ system.get_control_authority_display }}</dd>
+      <dt class="col-sm-3">ПДн / КИИ</dt><dd class="col-sm-9">{{ system.get_has_pdn_display }} / {{ system.get_kii_scope_display }}</dd>
+      <dt class="col-sm-3">Критичность</dt><dd class="col-sm-9">{{ system.get_criticality_display }}</dd>
+      <dt class="col-sm-3">Статус</dt><dd class="col-sm-9">{{ system.get_status_display }}</dd>
+      {% if system.operator_org %}
+        <dt class="col-sm-3">Организация</dt><dd class="col-sm-9">{{ system.operator_org }}</dd>
+      {% endif %}
+      {% if system.notes %}
+        <dt class="col-sm-3">Примечания</dt><dd class="col-sm-9">{{ system.notes }}</dd>
+      {% endif %}
+    </dl>
+  </div>
+</div>
+
+<h2 class="h5">Компоненты (активы ИС)</h2>
+<div class="card shadow-sm mb-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>Актив</th><th>Роль</th><th>Примечание</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in components %}
+          <tr>
+            <td><code>{{ c.asset.ip }}</code> {{ c.asset.hostname|default:"" }}</td>
+            <td>{{ c.get_role_display }}</td>
+            <td>{{ c.note|default:"—" }}</td>
+            <td class="text-end">
+              {% if can_edit %}
+                <form method="post" action="{% url 'registry:component_remove' system.pk c.pk %}" class="d-inline">
+                  {% csrf_token %}
+                  <button class="btn btn-outline-danger btn-sm" type="submit">Отвязать</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="text-secondary">Компонентов нет — привяжите ключевые активы ниже.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if can_edit %}
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h3 class="h6">Привязать актив</h3>
+      <form method="post" action="{% url 'registry:component_add' system.pk %}" novalidate>
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="btn btn-primary btn-sm" type="submit">Привязать</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

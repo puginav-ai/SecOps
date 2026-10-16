@@ -196,3 +196,123 @@ class AssetEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.at:%Y-%m-%d %H:%M} {self.asset_id} {self.kind}"
+
+
+class System(models.Model):
+    """ИС — карточка с владельцем и контролем (SDD §3.1, §5.1)."""
+
+    class SystemType(models.TextChoices):
+        LIS = "lis", "ЛИС"
+        PACS = "pacs", "PACS"
+        PHARMACY = "pharmacy", "Аптека"
+        SITE = "site", "Сайт"
+        MIS = "mis", "МИС"
+        ZUP = "zup", "ЗУП"
+        VKS = "vks", "ВКС"
+        TELEMEDICINE = "telemedicine", "Телемедицина"
+        INFRASTRUCTURE = "infrastructure", "Инфраструктура"
+        OTHER = "other", "Прочее"
+
+    class ControlAuthority(models.TextChoices):
+        FULL = "full", "Полный контроль"
+        SHARED = "shared", "Совместный контроль"
+        EXTERNAL = "external", "Внешний контур"
+        UNKNOWN = "unknown", "Не определён"
+
+    class YesNoUnknown(models.TextChoices):
+        YES = "yes", "да"
+        NO = "no", "нет"
+        UNKNOWN = "unknown", "неизвестно"
+
+    class Criticality(models.TextChoices):
+        LOW = "low", "низкая"
+        MEDIUM = "medium", "средняя"
+        HIGH = "high", "высокая"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "в эксплуатации"
+        PLANNED = "planned", "планируется"
+        RETIRED = "retired", "выведена"
+
+    name = models.CharField("название", max_length=200)
+    system_type = models.CharField(
+        "тип", max_length=20, choices=SystemType.choices, default=SystemType.OTHER
+    )
+    site = models.ForeignKey(
+        Site,
+        verbose_name="площадка",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="systems",
+    )
+    control_authority = models.CharField(
+        "контроль",
+        max_length=10,
+        choices=ControlAuthority.choices,
+        default=ControlAuthority.UNKNOWN,
+    )
+    owner_person = models.ForeignKey(
+        Person,
+        verbose_name="владелец",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="systems",
+    )
+    operator_org = models.CharField(
+        "эксплуатирующая организация", max_length=200, blank=True, default=""
+    )
+    has_pdn = models.CharField(
+        "ПДн", max_length=7, choices=YesNoUnknown.choices, default=YesNoUnknown.UNKNOWN
+    )
+    kii_scope = models.CharField(
+        "КИИ", max_length=7, choices=YesNoUnknown.choices, default=YesNoUnknown.UNKNOWN
+    )
+    criticality = models.CharField(
+        "критичность", max_length=10, choices=Criticality.choices, default=Criticality.LOW
+    )
+    status = models.CharField(
+        "статус", max_length=10, choices=Status.choices, default=Status.ACTIVE
+    )
+    notes = models.TextField("примечания", blank=True, default="")
+
+    class Meta:
+        verbose_name = "ИС"
+        verbose_name_plural = "ИС (реестр систем)"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SystemComponent(models.Model):
+    """Привязка актива к ИС (SDD §3.1): пара (ИС, актив) уникальна."""
+
+    class Role(models.TextChoices):
+        SERVER = "server", "сервер"
+        DB = "db", "СУБД"
+        APP = "app", "приложение"
+        NETWORK = "network", "сетевое"
+        WORKSTATION = "workstation", "АРМ"
+        OTHER = "other", "прочее"
+
+    system = models.ForeignKey(
+        System, verbose_name="ИС", on_delete=models.CASCADE, related_name="components"
+    )
+    asset = models.ForeignKey(
+        Asset, verbose_name="актив", on_delete=models.PROTECT, related_name="system_components"
+    )
+    role = models.CharField("роль", max_length=20, choices=Role.choices, default=Role.OTHER)
+    note = models.CharField("примечание", max_length=200, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Компонент ИС"
+        verbose_name_plural = "Компоненты ИС"
+        constraints = [
+            models.UniqueConstraint(fields=["system", "asset"], name="uniq_system_component")
+        ]
+        ordering = ["system__name", "asset__ip"]
+
+    def __str__(self) -> str:
+        return f"{self.system} ← {self.asset}"

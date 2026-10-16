@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Люди (реестр ответственности){% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Люди (реестр ответственности)</h1>
+  {% if can_edit %}
+    <a class="btn btn-primary btn-sm" href="{% url 'registry:person_create' %}">Добавить человека</a>
+  {% endif %}
+</div>
+<p class="text-secondary mb-3">
+  Владельцы ИС, ответственные за сегменты и активы.
+  <a href="{% url 'registry:system_list' %}">ИС →</a>
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>ФИО</th><th>Должность</th><th>Телефон</th><th>Почта</th><th>Учётная запись</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for p in people %}
+          <tr>
+            <td>{{ p.fio }}</td>
+            <td>{{ p.position|default:"—" }}</td>
+            <td>{{ p.phone|default:"—" }}</td>
+            <td>{{ p.email|default:"—" }}</td>
+            <td>{{ p.user|default:"—" }}</td>
+            <td class="text-end">
+              {% if can_edit %}
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'registry:person_edit' p.pk %}">Изменить</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-secondary">Список пуст — заведите владельцев ИС и ответственных.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

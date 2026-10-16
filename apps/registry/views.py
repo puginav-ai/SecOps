@@ -10,12 +10,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.core.access import module_access, role_required
+from apps.core.access import module_access, role_required, user_roles
 from apps.discovery.services import MISS_THRESHOLD
-from apps.registry.forms import SegmentForm
-from apps.registry.models import Asset, Segment
+from apps.registry.forms import PersonForm, SegmentForm, SystemComponentForm, SystemForm
+from apps.registry.models import Asset, Person, Segment, System, SystemComponent
 
 NEW_ASSETS_HOURS = 24
+# Роли, которым виден весь реестр ИС (у «system_owner» — только свои ИС, SDD §4)
+FULL_REGISTRY_ROLES = {"ib_admin", "ib_officer", "it_ops", "reader"}
 
 
 @role_required("registry")
@@ -96,3 +98,133 @@ def asset_list(request):
         .order_by("segment__name"),
     }
     return render(request, "registry/assets.html", context)
+
+
+@role_required("registry")
+def unknown_assets(request):
+    """Unknown assets: активы без привязки к ИС и без ответственного (SDD §5.1)."""
+    assets = (
+        Asset.objects.filter(owner_person__isnull=True, system_components__isnull=True)
+        .select_related("segment")
+        .order_by("-first_seen_at")
+    )
+    return render(
+        request,
+        "registry/unknown_assets.html",
+        {"assets": assets, "total": assets.count(), "miss_threshold": MISS_THRESHOLD},
+    )
+
+
+def _visible_systems(request):
+    """ИС с учётом роли: «system_owner» видит только свои (SDD §4)."""
+    systems = System.objects.select_related("site", "owner_person").order_by("name")
+    roles = user_roles(request.user)
+    if "system_owner" in roles and not roles & FULL_REGISTRY_ROLES:
+        systems = systems.filter(owner_person__user=request.user)
+    return systems
+
+
+@role_required("registry")
+def system_list(request):
+    return render(
+        request,
+        "registry/systems.html",
+        {
+            "systems": _visible_systems(request),
+            "can_edit": module_access(request.user, "registry") == "rw",
+        },
+    )
+
+
+@role_required("registry", "rw")
+def system_create(request):
+    form = SystemForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        system = form.save()
+        messages.success(request, f"ИС «{system.name}» сохранена")
+        return redirect("registry:system_list")
+    return render(request, "registry/system_form.html", {"form": form, "title": "Новая ИС"})
+
+
+@role_required("registry", "rw")
+def system_edit(request, pk: int):
+    system = get_object_or_404(System, pk=pk)
+    form = SystemForm(request.POST or None, instance=system)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"ИС «{system.name}» сохранена")
+        return redirect("registry:system_list")
+    return render(
+        request, "registry/system_form.html", {"form": form, "title": f"ИС «{system.name}»"}
+    )
+
+
+@role_required("registry")
+def system_detail(request, pk: int):
+    system = get_object_or_404(_visible_systems(request), pk=pk)
+    components = system.components.select_related("asset").order_by("asset__ip")
+    return render(
+        request,
+        "registry/system_detail.html",
+        {
+            "system": system,
+            "components": components,
+            "form": SystemComponentForm(system=system),
+            "can_edit": module_access(request.user, "registry") == "rw",
+        },
+    )
+
+
+@role_required("registry", "rw")
+@require_POST
+def component_add(request, pk: int):
+    system = get_object_or_404(System, pk=pk)
+    form = SystemComponentForm(request.POST, system=system)
+    if form.is_valid():
+        component = form.save(commit=False)
+        component.system = system
+        component.save()
+        messages.success(request, f"Актив {component.asset.ip} привязан к «{system.name}»")
+    else:
+        messages.error(request, f"Не удалось привязать: {form.errors.as_text()}")
+    return redirect("registry:system_detail", pk=system.pk)
+
+
+@role_required("registry", "rw")
+@require_POST
+def component_remove(request, pk: int, component_id: int):
+    system = get_object_or_404(System, pk=pk)
+    SystemComponent.objects.filter(pk=component_id, system=system).delete()
+    messages.success(request, "Привязка удалена")
+    return redirect("registry:system_detail", pk=system.pk)
+
+
+@role_required("registry")
+def person_list(request):
+    people = Person.objects.select_related("user").order_by("fio")
+    return render(
+        request,
+        "registry/persons.html",
+        {"people": people, "can_edit": module_access(request.user, "registry") == "rw"},
+    )
+
+
+@role_required("registry", "rw")
+def person_create(request):
+    form = PersonForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        person = form.save()
+        messages.success(request, f"«{person.fio}» сохранён")
+        return redirect("registry:person_list")
+    return render(request, "registry/person_form.html", {"form": form, "title": "Новый человек"})
+
+
+@role_required("registry", "rw")
+def person_edit(request, pk: int):
+    person = get_object_or_404(Person, pk=pk)
+    form = PersonForm(request.POST or None, instance=person)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"«{person.fio}» сохранён")
+        return redirect("registry:person_list")
+    return render(request, "registry/person_form.html", {"form": form, "title": f"«{person.fio}»"})
