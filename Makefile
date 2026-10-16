@@ -1,5 +1,5 @@
 # SecOps GRC — базовые команды. Всё выполняется в Docker (на VM нет venv).
-COMPOSE := docker compose -f ops/compose.yaml
+COMPOSE := docker compose --env-file .env -f ops/compose.yaml
 RUN := $(COMPOSE) run --rm
 MOUNT := -v $(CURDIR):/app
 
