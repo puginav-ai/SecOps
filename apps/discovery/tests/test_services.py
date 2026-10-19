@@ -178,6 +178,55 @@ def test_asset_follows_mac_into_another_segment(segment: Segment) -> None:
     }
 
 
+def test_device_passport_is_filled_from_network_signals(segment: Segment) -> None:
+    """Вендор (OUI), авто-роль и версии служб — из сетевых наблюдений (SDD §5.10)."""
+    services.apply_observations(
+        segment,
+        [
+            ObservedHost(
+                ip="10.60.1.20",
+                mac="08:55:31:aa:bb:cc",  # префикс MikroTik/Routerboard из OUI IEEE
+                hostname="core-sw",
+                ports=(8291,),
+            ),
+            ObservedHost(
+                ip="10.60.1.21",
+                mac=MAC_A,
+                hostname="srv-demo",
+                ports=(22, 443),
+                services=(
+                    {
+                        "port": 443,
+                        "service": "https",
+                        "product": "nginx",
+                        "version": "1.24.0",
+                        "extrainfo": "",
+                    },
+                ),
+            ),
+        ],
+    )
+
+    mikrotik = Asset.objects.get(ip="10.60.1.20")
+    assert "routerboard" in mikrotik.mac_vendor.lower()
+    assert mikrotik.role_auto == "network"
+
+    server = Asset.objects.get(ip="10.60.1.21")
+    assert server.role_auto == "server"
+    assert server.fingerprint["services"][0]["product"] == "nginx"
+
+
+def test_passport_update_is_recorded_as_change(segment: Segment) -> None:
+    services.apply_observations(segment, [host("10.60.1.30", mac=MAC_B)])
+    services.apply_observations(segment, [host("10.60.1.30", mac=MAC_B, ports=(9100,))])
+
+    asset = Asset.objects.get(ip="10.60.1.30")
+    assert asset.role_auto == "printer"
+    assert AssetEvent.objects.filter(
+        kind=AssetEvent.Kind.CHANGED, details__role_auto__to="printer"
+    ).exists()
+
+
 # --- окно скана и расписание ----------------------------------------------------------
 
 
@@ -188,6 +237,19 @@ def test_is_scan_allowed_respects_flag_and_window(segment: Segment) -> None:
 
     segment.scan_enabled = False
     assert services.is_scan_allowed(segment, now) == (False, "scan_disabled")
+
+
+def test_manual_scan_ignores_window_but_not_the_switch(segment: Segment) -> None:
+    """Кнопка «просканировать сейчас» работает вне окна, но выключатель скана уважает."""
+    now = timezone.localtime()
+    tomorrow = (now.weekday() + 1) % 7
+    segment.scan_window = {"days": [tomorrow], "start": "08:00", "end": "14:00"}
+
+    assert services.is_scan_allowed(segment, now) == (False, "outside_window")
+    assert services.is_scan_allowed(segment, now, manual=True) == (True, "")
+
+    segment.scan_enabled = False
+    assert services.is_scan_allowed(segment, now, manual=True) == (False, "scan_disabled")
 
     segment.scan_enabled = True
     segment.scan_window = {"days": [1], "start": "09:00", "end": "18:00"}  # вторник днём

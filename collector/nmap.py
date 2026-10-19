@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET
 
 # Бюджет скана — SDD §5.2
 HOST_TIMEOUT = "10s"
+VERSION_HOST_TIMEOUT = "30s"  # -sV дольше: версии служб не влезают в 10 с
 MAX_RATE = "100"  # pps
 TOP_PORTS = "100"
 CHUNK_PREFIX = 24
@@ -25,6 +26,7 @@ class ObservedHost:
     hostname: str = ""
     os_name: str = ""
     ports: tuple[int, ...] = ()
+    services: tuple[dict, ...] = ()  # [{"port", "service", "product", "version", "extrainfo"}]
     source: str = "nmap"
 
 
@@ -58,14 +60,28 @@ def parse_nmap_xml(xml_text: str) -> list[ObservedHost]:
         os_name = os_el.get("name", "") if os_el is not None else ""
 
         ports: list[int] = []
+        services: list[dict] = []
         for port in host.findall("ports/port"):
             state = port.find("state")
             if state is None or state.get("state") != "open":
                 continue
             try:
-                ports.append(int(port.get("portid", "")))
+                portid = int(port.get("portid", ""))
             except ValueError:
                 continue
+            ports.append(portid)
+            service_el = port.find("service")
+            if service_el is None:
+                continue
+            service = {
+                "port": portid,
+                "service": service_el.get("name", ""),
+                "product": service_el.get("product", ""),
+                "version": service_el.get("version", ""),
+                "extrainfo": service_el.get("extrainfo", ""),
+            }
+            if service["service"] or service["product"] or service["version"]:
+                services.append(service)
 
         hosts.append(
             ObservedHost(
@@ -74,6 +90,7 @@ def parse_nmap_xml(xml_text: str) -> list[ObservedHost]:
                 hostname=hostname,
                 os_name=os_name,
                 ports=tuple(sorted(ports)),
+                services=tuple(services),
             )
         )
     return hosts
@@ -93,20 +110,21 @@ def build_sweep_args(target: str) -> list[str]:
     return ["nmap", "-sn", "-n", "-T3", target]
 
 
-def build_service_args(targets: list[str]) -> list[str]:
+def build_service_args(targets: list[str], *, version: bool = False) -> list[str]:
     """top-100 портов для живых узлов: бюджет host-timeout/max-rate (SDD §5.2), без DNS.
 
     T3, а не T2: у T2 минимальная задержка 0.4 с на пробу, и top-100 не укладывается
     в host-timeout 10 с (проверено). Темп ограничивает --max-rate 100 pps.
+    `version=True` — профиль «top-100 + версии»: -sV (лёгкая интенсивность) и баннеры
+    HTTP/SSH дают продукт и версию ПО; host-timeout увеличен до 30 с.
     """
+    args = ["nmap", "-n", "-T3", "--top-ports", TOP_PORTS]
+    if version:
+        args += ["-sV", "--version-light", "--script", "banner,http-title"]
     return [
-        "nmap",
-        "-n",
-        "-T3",
-        "--top-ports",
-        TOP_PORTS,
+        *args,
         "--host-timeout",
-        HOST_TIMEOUT,
+        VERSION_HOST_TIMEOUT if version else HOST_TIMEOUT,
         "--max-rate",
         MAX_RATE,
         *targets,

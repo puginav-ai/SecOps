@@ -42,3 +42,20 @@ class ScanRun(models.Model):
 
     def __str__(self) -> str:
         return f"{self.started_at:%Y-%m-%d %H:%M} {self.segment_id} {self.status}"
+
+
+class RouterDevice(models.Model):
+    """Инвентарь роутеров (SDD §5.10): имя и адреса интерфейсов — рёбра карты сети."""
+
+    host = models.CharField("IP", max_length=45, unique=True)
+    name = models.CharField("имя", max_length=120, blank=True, default="")
+    addresses = models.JSONField("адреса интерфейсов", default=list, blank=True)
+    last_seen_at = models.DateTimeField("последнее обнаружение")
+
+    class Meta:
+        verbose_name = "Роутер"
+        verbose_name_plural = "Роутеры (инвентарь)"
+        ordering = ["name", "host"]
+
+    def __str__(self) -> str:
+        return f"{self.name or self.host} ({self.host})"

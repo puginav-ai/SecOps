@@ -7,6 +7,7 @@ from collector.nmap import (
     HOST_TIMEOUT,
     MAX_RATE,
     TOP_PORTS,
+    VERSION_HOST_TIMEOUT,
     build_service_args,
     build_sweep_args,
     chunk_cidr,
@@ -30,6 +31,24 @@ def test_detail_xml_yields_ports_hostname_and_os():
     assert hosts["10.60.1.10"].hostname == "srv-demo"
     assert hosts["10.60.1.10"].os_name == "Linux 5.4"
     assert hosts["10.60.1.11"].ports == (3389,)
+
+
+def test_detail_xml_yields_services_and_versions():
+    hosts = {host.ip: host for host in parse_nmap_xml(DETAIL_XML)}
+
+    ssh = hosts["10.60.1.10"].services[0]
+    assert ssh == {
+        "port": 22,
+        "service": "ssh",
+        "product": "OpenSSH",
+        "version": "8.9p1",
+        "extrainfo": "",
+    }
+    assert hosts["10.60.1.11"].services[0]["service"] == "ms-wbt-server"
+
+
+def test_sweep_xml_has_no_services():
+    assert all(host.services == () for host in parse_nmap_xml(SWEEP_XML))
 
 
 def test_weird_xml_is_survived():
@@ -59,3 +78,13 @@ def test_service_args_respect_scan_budget():
     assert "--host-timeout" in args and HOST_TIMEOUT in args
     assert "--max-rate" in args and MAX_RATE in args
     assert args[-2:] == ["10.60.1.10", "10.60.1.11"]
+
+
+def test_version_service_args_add_fingerprinting():
+    args = build_service_args(["10.60.1.10"], version=True)
+
+    assert "-sV" in args
+    assert "--version-light" in args
+    assert "banner,http-title" in args
+    assert VERSION_HOST_TIMEOUT in args
+    assert args[-1] == "10.60.1.10"

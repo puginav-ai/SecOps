@@ -18,10 +18,12 @@ ZERO_MAC = "00:00:00:00:00:00"
 
 @dataclass(frozen=True)
 class RouterData:
-    """Выгрузка роутера: строки ARP и действующие DHCP-аренды."""
+    """Выгрузка роутера: строки ARP, DHCP-аренды, имя и адреса интерфейсов."""
 
     arp: tuple[Mapping[str, str], ...] = ()
     leases: tuple[Mapping[str, str], ...] = ()
+    identity: str = ""
+    addresses: tuple[Mapping[str, str], ...] = ()
 
 
 def fetch_router_data(
@@ -51,9 +53,38 @@ def fetch_router_data(
             for row in api.path("ip", "dhcp-server", "lease")
             if row.get("status") == "bound"
         )
+        identity_rows = tuple(dict(row) for row in api.path("system", "identity"))
+        addresses = tuple(dict(row) for row in api.path("ip", "address"))
     finally:
         api.close()
-    return RouterData(arp=arp, leases=leases)
+    identity = str(identity_rows[0].get("name", "")) if identity_rows else ""
+    return RouterData(arp=arp, leases=leases, identity=identity, addresses=addresses)
+
+
+def normalized_addresses(rows: Iterable[Mapping[str, str]]) -> list[dict]:
+    """Строки /ip/address → [{address, interface, network}]; disabled/invalid пропускаются."""
+    result: list[dict] = []
+    for row in rows:
+        if str(row.get("disabled")).lower() in ("true", "yes") or str(
+            row.get("invalid")
+        ).lower() in (
+            "true",
+            "yes",
+        ):
+            continue
+        address = str(row.get("address", "")).strip()
+        try:
+            iface = ipaddress.ip_interface(address)
+        except ValueError:
+            continue
+        result.append(
+            {
+                "address": address,
+                "interface": str(row.get("interface", "")).strip(),
+                "network": str(iface.network),
+            }
+        )
+    return result
 
 
 def arp_hosts(rows: Iterable[Mapping[str, str]], cidr: str) -> list[ObservedHost]:

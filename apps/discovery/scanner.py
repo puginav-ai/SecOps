@@ -25,7 +25,7 @@ from collector.runner import run_nmap
 logger = logging.getLogger(__name__)
 
 
-def _router_sources() -> list[tuple[str, str, str, bool]]:
+def router_sources() -> list[tuple[str, str, str, bool]]:
     """Настроенные источники пассивных данных: основной роутер + дополнительные (JSON-список)."""
     sources = [
         (
@@ -54,7 +54,7 @@ def passive_hosts(segment: Segment) -> tuple[list[ObservedHost], list[Mapping[st
     """
     hosts: list[ObservedHost] = []
     leases: list[Mapping[str, str]] = []
-    for host, user, password, use_ssl in _router_sources():
+    for host, user, password, use_ssl in router_sources():
         if not host:
             continue
         try:
@@ -76,10 +76,24 @@ def collect_observations(segment: Segment) -> list[ObservedHost]:
     for chunk in chunk_cidr(segment.cidr):
         alive.extend(parse_nmap_xml(run_nmap(build_sweep_args(chunk))))
 
-    if segment.scan_profile == Segment.ScanProfile.TOP100 and alive:
+    if (
+        segment.scan_profile
+        in (
+            Segment.ScanProfile.TOP100,
+            Segment.ScanProfile.TOP100_SERVICES,
+        )
+        and alive
+    ):
         detailed = {
             host.ip: host
-            for host in parse_nmap_xml(run_nmap(build_service_args([host.ip for host in alive])))
+            for host in parse_nmap_xml(
+                run_nmap(
+                    build_service_args(
+                        [host.ip for host in alive],
+                        version=segment.scan_profile == Segment.ScanProfile.TOP100_SERVICES,
+                    )
+                )
+            )
         }
         # узел, «потерянный» при детальном скане, остаётся живым из свипа
         alive = [detailed.get(host.ip, host) for host in alive]

@@ -184,6 +184,11 @@ CELERY_BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "apps.discovery.tasks.scan_due_segments",
         "schedule": crontab(minute="*/30"),
     },
+    # Инвентарь роутеров (имя, адреса интерфейсов) — рёбра карты сети
+    "router-inventory": {
+        "task": "apps.discovery.tasks.refresh_router_inventory",
+        "schedule": crontab(minute=20),
+    },
     # Утро буднего дня: материализация обязательств, статусы, напоминания 30/7/1, эскалации
     "obligations-daily": {
         "task": "apps.obligations.tasks.daily_obligations",

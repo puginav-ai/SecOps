@@ -16,7 +16,9 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.registry.models import Asset, AssetEvent, Segment
+from collector.classify import classify_role
 from collector.nmap import ObservedHost
+from collector.oui import vendor_for_mac
 from collector.window import in_scan_window
 
 logger = logging.getLogger(__name__)
@@ -37,10 +39,16 @@ class ApplyResult:
     reappeared: int = 0
 
 
-def is_scan_allowed(segment: Segment, now: datetime) -> tuple[bool, str]:
-    """Разрешён ли скан сегмента сейчас. Причина отказа: scan_disabled|outside_window|bad_window."""
+def is_scan_allowed(segment: Segment, now: datetime, *, manual: bool = False) -> tuple[bool, str]:
+    """Разрешён ли скан сегмента сейчас. Причина отказа: scan_disabled|outside_window|bad_window.
+
+    Ручной запуск (кнопка «просканировать сейчас») игнорирует окно — это осознанное действие
+    администратора; выключатель скана (`scan_enabled`) уважается всегда (SDD §5.2).
+    """
     if not segment.scan_enabled:
         return False, "scan_disabled"
+    if manual:
+        return True, ""
     try:
         allowed = in_scan_window(segment.scan_window, now)
     except ValueError:
@@ -86,15 +94,20 @@ def apply_observations(segment: Segment, observations: Sequence[ObservedHost]) -
                 asset = by_ip
 
         if asset is None:
+            vendor = vendor_for_mac(mac or "")
             asset = Asset.objects.create(
                 ip=observed.ip,
                 mac=mac or "",
+                mac_vendor=vendor,
                 hostname=observed.hostname,
                 os_name=observed.os_name,
                 site=segment.site,
                 segment=segment,
                 discovery_source=observed.source,
                 ports=list(observed.ports),
+                role_auto=classify_role(observed.ports, vendor, observed.hostname),
+                fingerprint={"services": list(observed.services)} if observed.services else {},
+                software=software_label(observed),
                 last_seen_at=now,
             )
             AssetEvent.objects.create(asset=asset, kind=AssetEvent.Kind.NEW)
@@ -160,8 +173,31 @@ def _update_asset(
         )
         asset.ports = ports
 
+    # Паспорт устройства (SDD §5.10): вендор по OUI, роль по правилам, версии служб.
+    effective_mac = mac or asset.mac
+    vendor = vendor_for_mac(effective_mac or "")
+    if vendor and vendor != asset.mac_vendor:
+        changes["mac_vendor"] = {"from": asset.mac_vendor, "to": vendor}
+
+    effective_hostname = observed.hostname or asset.hostname
+    role_auto = classify_role(ports or asset.ports, vendor or asset.mac_vendor, effective_hostname)
+    if role_auto and role_auto != asset.role_auto:
+        changes["role_auto"] = {"from": asset.role_auto, "to": role_auto}
+
+    services = [dict(item) for item in observed.services]
+    if services and services != (asset.fingerprint or {}).get("services", []):
+        changes["services"] = {
+            "from": (asset.fingerprint or {}).get("services", []),
+            "to": services,
+        }
+
     asset.ip = observed.ip
     asset.mac = mac or asset.mac
+    asset.mac_vendor = vendor or asset.mac_vendor
+    asset.role_auto = role_auto or asset.role_auto
+    if services:
+        asset.fingerprint = {**(asset.fingerprint or {}), "services": services}
+        asset.software = software_label(observed)
     asset.hostname = observed.hostname or asset.hostname
     asset.os_name = observed.os_name or asset.os_name
     asset.site = segment.site
@@ -170,6 +206,17 @@ def _update_asset(
     asset.miss_count = 0
     asset.save()
     return changes
+
+
+def software_label(observed: ObservedHost) -> str:
+    """Человекочитаемая строка «продукт версия; …» из версий nmap -sV (для фильтра и выгрузки)."""
+    labels = []
+    for item in observed.services:
+        label = " ".join(
+            part for part in (item.get("product", ""), item.get("version", "")) if part
+        )
+        labels.append(label or item.get("service", ""))
+    return "; ".join(sorted(filter(None, labels)))[:500]
 
 
 def _mark_disappeared(asset: Asset, details: dict) -> None:

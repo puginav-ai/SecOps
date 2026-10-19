@@ -80,12 +80,22 @@ def test_fetch_router_data_reads_arp_and_bound_leases(monkeypatch: pytest.Monkey
             calls["paths"].append(parts)
             if parts[:2] == ("ip", "arp"):
                 return iter([{"address": "10.0.0.1", "mac-address": "AA:BB:CC:00:00:01"}])
-            return iter(
-                [
-                    {"mac-address": "AA:BB:CC:00:00:01", "host-name": "pc", "status": "bound"},
-                    {"mac-address": "AA:BB:CC:00:00:02", "host-name": "old", "status": "waiting"},
-                ]
-            )
+            if parts == ("ip", "dhcp-server", "lease"):
+                return iter(
+                    [
+                        {"mac-address": "AA:BB:CC:00:00:01", "host-name": "pc", "status": "bound"},
+                        {
+                            "mac-address": "AA:BB:CC:00:00:02",
+                            "host-name": "old",
+                            "status": "waiting",
+                        },
+                    ]
+                )
+            if parts == ("system", "identity"):
+                return iter([{"name": "MT-Root"}])
+            if parts == ("ip", "address"):
+                return iter([{"address": "10.0.0.1/24", "interface": "bridge"}])
+            return iter(())
 
         def close(self) -> None:
             calls["closed"] = True
@@ -100,13 +110,20 @@ def test_fetch_router_data_reads_arp_and_bound_leases(monkeypatch: pytest.Monkey
 
     assert calls["auth"] == ("192.0.2.2", "admin", "demo-fake-password")
     assert calls["connect_kwargs"] == {"port": 8728, "timeout": 10.0}
-    assert calls["paths"] == [("ip", "arp"), ("ip", "dhcp-server", "lease")]
+    assert calls["paths"] == [
+        ("ip", "arp"),
+        ("ip", "dhcp-server", "lease"),
+        ("system", "identity"),
+        ("ip", "address"),
+    ]
     assert calls["closed"] is True
     assert data.arp == ({"address": "10.0.0.1", "mac-address": "AA:BB:CC:00:00:01"},)
     # «waiting»-аренда не попадает: интересны только действующие устройства
     assert data.leases == (
         {"mac-address": "AA:BB:CC:00:00:01", "host-name": "pc", "status": "bound"},
     )
+    assert data.identity == "MT-Root"
+    assert data.addresses == ({"address": "10.0.0.1/24", "interface": "bridge"},)
 
 
 def test_fetch_router_data_uses_api_ssl_port(monkeypatch: pytest.MonkeyPatch) -> None:

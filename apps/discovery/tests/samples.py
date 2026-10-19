@@ -30,9 +30,11 @@ DETAIL_XML = """<?xml version="1.0"?>
     <address addr="aa:bb:cc:00:00:01" addrtype="mac"/>
     <hostnames><hostname name="srv-demo"/></hostnames>
     <ports>
-      <port protocol="tcp" portid="22"><state state="open"/></port>
+      <port protocol="tcp" portid="22"><state state="open"/>
+        <service name="ssh" product="OpenSSH" version="8.9p1"/></port>
       <port protocol="tcp" portid="80"><state state="closed"/></port>
-      <port protocol="tcp" portid="443"><state state="open"/></port>
+      <port protocol="tcp" portid="443"><state state="open"/>
+        <service name="https" product="nginx" version="1.24.0"/></port>
     </ports>
     <os><osmatch name="Linux 5.4"/></os>
   </host>
@@ -40,7 +42,8 @@ DETAIL_XML = """<?xml version="1.0"?>
     <status state="up"/>
     <address addr="10.60.1.11" addrtype="ipv4"/>
     <hostnames><hostname name="pc-demo"/></hostnames>
-    <ports><port protocol="tcp" portid="3389"><state state="open"/></port></ports>
+    <ports><port protocol="tcp" portid="3389"><state state="open"/>
+      <service name="ms-wbt-server"/></port></ports>
   </host>
 </nmaprun>
 """
