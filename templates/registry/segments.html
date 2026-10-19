@@ -10,6 +10,7 @@
 </div>
 <p class="text-secondary mb-3">
   Discovery сканирует только включённые сегменты и только внутри окна скана.
+  <a href="{% url 'registry:network_map' %}">Карта сети →</a>
   <a href="{% url 'registry:asset_list' %}">Активы →</a>
   <a href="{% url 'registry:system_list' %}">ИС →</a>
   <a href="{% url 'registry:person_list' %}">Люди →</a>
@@ -43,6 +44,12 @@
             <td>{{ s.last_scan_at|date:"d.m.Y H:i"|default:"—" }}</td>
             <td class="text-end">
               {% if can_edit %}
+                {% if s.scan_enabled %}
+                  <form method="post" action="{% url 'registry:segment_scan_now' s.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-primary btn-sm" type="submit">Скан сейчас</button>
+                  </form>
+                {% endif %}
                 <a class="btn btn-outline-secondary btn-sm" href="{% url 'registry:segment_edit' s.pk %}">Изменить</a>
                 <form method="post" action="{% url 'registry:segment_delete' s.pk %}" class="d-inline"
                       onsubmit="return confirm('Удалить сегмент?');">

@@ -23,6 +23,7 @@ PAGES: list[tuple[str, str]] = [
     ("/", "дашборд"),
     ("/registry/", "реестр"),
     ("/registry/assets/unknown/", "unknown assets"),
+    ("/registry/map/", "карта сети"),
     ("/compliance/", "матрица контролей"),
     ("/evidence/", "evidence"),
     ("/obligations/", "обязательства"),

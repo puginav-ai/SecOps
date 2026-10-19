@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Карта сети{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Карта сети</h1>
+  <div class="text-secondary small">данные — из discovery (ARP, DHCP, nmap, роутеры)</div>
+</div>
+<p class="text-secondary mb-3">
+  {% if segment %}
+    <a href="{% url 'registry:network_map' %}">← Все площадки</a>
+    <a href="{% url 'registry:segment_list' %}">Сегменты →</a>
+    <a href="{% url 'registry:asset_list' %}">Активы →</a>
+  {% else %}
+    {% if site_id %}<a href="{% url 'registry:network_map' %}">← Все площадки</a>{% endif %}
+    Площадки, роутеры и сегменты. Клик по сегменту — состав и связи с ИС.
+    <a href="{% url 'registry:segment_list' %}">Сегменты →</a>
+    <a href="{% url 'registry:asset_list' %}">Активы →</a>
+  {% endif %}
+</p>
+
+{% if segment %}
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="segment" value="{{ segment.pk }}">
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-role">Тип</label>
+      <select class="form-select form-select-sm" id="f-role" name="role">
+        <option value="">любой</option>
+        {% for value, title in roles %}
+          <option value="{{ value }}" {% if filters.role == value %}selected{% endif %}>{{ title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-vendor">Вендор</label>
+      <select class="form-select form-select-sm" id="f-vendor" name="vendor">
+        <option value="">любой</option>
+        {% for vendor in vendors %}
+          <option value="{{ vendor }}" {% if filters.vendor == vendor %}selected{% endif %}>{{ vendor|truncatechars:40 }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-status">Статус</label>
+      <select class="form-select form-select-sm" id="f-status" name="status">
+        <option value="">любой</option>
+        <option value="active" {% if filters.status == "active" %}selected{% endif %}>в сети</option>
+        <option value="quiet" {% if filters.status == "quiet" %}selected{% endif %}>молчит</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-system">ИС</label>
+      <select class="form-select form-select-sm" id="f-system" name="system">
+        <option value="">любая</option>
+        <option value="with" {% if filters.system == "with" %}selected{% endif %}>привязан к ИС</option>
+        <option value="without" {% if filters.system == "without" %}selected{% endif %}>без ИС</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-port">Порт</label>
+      <input class="form-control form-control-sm" style="width: 90px" id="f-port" name="port"
+             inputmode="numeric" value="{{ filters.port }}" placeholder="3389">
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-product">ПО</label>
+      <input class="form-control form-control-sm" style="width: 150px" id="f-product" name="product"
+             value="{{ filters.product }}" placeholder="nginx, OpenSSH…">
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-q">Поиск</label>
+      <input class="form-control form-control-sm" style="width: 170px" id="f-q" name="q"
+             value="{{ filters.q }}" placeholder="IP, имя, MAC">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary btn-sm" type="submit">Фильтр</button>
+      <a class="btn btn-outline-secondary btn-sm" href="?segment={{ segment.pk }}">Сбросить</a>
+    </div>
+    <div class="col-auto ms-auto">
+      {% if can_edit and segment.scan_enabled %}
+        <form method="post" action="{% url 'registry:segment_scan_now' segment.pk %}" class="d-inline">
+          {% csrf_token %}
+          <button class="btn btn-outline-primary btn-sm" type="submit">Просканировать сейчас</button>
+        </form>
+      {% endif %}
+      <a class="btn btn-outline-secondary btn-sm"
+         href="{% url 'registry:segment_assets_xlsx' %}?{{ request.GET.urlencode }}">XLSX →</a>
+    </div>
+  </form>
+
+  <div class="text-secondary small mb-2">
+    {{ segment.site }} · {{ segment.name }} · <code>{{ segment.cidr }}</code>
+    {% if segment.vlan %} · VLAN {{ segment.vlan }}{% endif %}
+    — активов {{ assets_total }} (в сети {{ active_total }}, молчит {{ quiet_total }}, без ИС {{ unknown_total }})
+    {% if graph_total > graph_shown %}· на графе первые {{ graph_shown }} (см. таблицу ниже){% endif %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-xl-8">
+      <div class="card shadow-sm h-100"><div class="card-body p-0">
+        <div id="map" style="height: 68vh; min-height: 420px;"></div>
+      </div></div>
+    </div>
+    <div class="col-xl-4">
+      <div class="card shadow-sm h-100"><div class="card-body" id="details">
+        <div class="text-secondary">
+          Клик по активу — паспорт устройства: IP, MAC, вендор, тип, ОС, порты, службы, ИС.
+          Жёлтые связи — принадлежность к ИС. Бледные узлы — молчат ({{ miss_threshold }} промаха подряд).
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <h2 class="h5 mt-4">Состав сегмента</h2>
+  <div class="card shadow-sm"><div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th><a href="?{{ base_query }}{% if base_query %}&amp;{% endif %}sort=ip">IP</a></th>
+          <th>MAC / вендор</th>
+          <th><a href="?{{ base_query }}{% if base_query %}&amp;{% endif %}sort=hostname">Имя</a></th>
+          <th><a href="?{{ base_query }}{% if base_query %}&amp;{% endif %}sort=role">Тип</a></th>
+          <th>ОС</th>
+          <th>Порты</th>
+          <th>Службы / ПО</th>
+          <th>ИС</th>
+          <th><a href="?{{ base_query }}{% if base_query %}&amp;{% endif %}sort=last_seen">Отклик</a></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assets %}
+          <tr>
+            <td class="text-nowrap">{{ a.ip }}</td>
+            <td class="small">{{ a.mac|default:"—" }}<br><span class="text-secondary">{{ a.mac_vendor|default:"" }}</span></td>
+            <td>{{ a.hostname|default:"—" }}</td>
+            <td>
+              {% if a.device_role != "unknown" %}
+                {{ a.get_device_role_display }}
+              {% elif a.role_auto %}
+                {{ a.get_role_auto_display }} <span class="text-secondary small">(авто)</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="small">{{ a.os_name|default:a.os_family|default:"—" }}</td>
+            <td class="small text-nowrap">
+              {% if a.ports %}
+                {% for port in a.ports|slice:":8" %}{{ port }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                {% if a.ports|length > 8 %} +{{ a.ports|length|add:"-8" }}{% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="small">
+              {% for svc in a.fingerprint.services %}
+                <span class="badge text-bg-light border">{{ svc.product|default:svc.service }} {{ svc.version }}</span>
+              {% empty %}—{% endfor %}
+            </td>
+            <td class="small">
+              {% for component in a.system_components.all %}{{ component.system.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+            </td>
+            <td class="small text-nowrap {% if a.miss_count >= miss_threshold %}text-secondary{% endif %}">
+              {{ a.last_seen_at|date:"d.m H:i" }}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="9" class="text-secondary">под фильтры ничего не попало</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+{% else %}
+  <div class="card shadow-sm mb-3"><div class="card-body p-0">
+    <div id="map" style="height: 62vh; min-height: 400px;"></div>
+  </div></div>
+
+  <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+    {% for s in segments %}
+      <div class="col">
+        <a class="text-decoration-none" href="?segment={{ s.pk }}">
+          <div class="card shadow-sm h-100"><div class="card-body py-2">
+            <div class="fw-semibold">{{ s.name }}</div>
+            <div class="text-secondary small">
+              {{ s.site }} · <code>{{ s.cidr }}</code>
+              {% if s.vlan %} · VLAN {{ s.vlan }}{% endif %}
+            </div>
+          </div></div>
+        </a>
+      </div>
+    {% empty %}
+      <div class="col text-secondary">сегменты не заведены</div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{{ graph|json_script:"graph-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/cytoscape.min.js' %}"></script>
+<script>
+(function () {
+  const graph = JSON.parse(document.getElementById("graph-data").textContent);
+  const roleColors = {
+    server: "#0d6efd", workstation: "#6ea8fe", printer: "#fd7e14", network: "#6c757d",
+    medical: "#dc3545", phone: "#20c997", camera: "#6f42c1", other: "#adb5bd", unknown: "#dee2e6"
+  };
+  const roleTitles = {
+    server: "сервер", workstation: "АРМ", printer: "печать/МФУ", network: "сетевое оборудование",
+    medical: "медицинское изделие", phone: "телефон", camera: "видеокамера",
+    other: "прочее", unknown: "—"
+  };
+  const elements = graph.nodes.concat(graph.edges);
+  const roleSelectors = Object.keys(roleColors).map(function (role) {
+    return { selector: 'node[type="asset"][role="' + role + '"]', style: { "background-color": roleColors[role] } };
+  });
+  const cy = cytoscape({
+    container: document.getElementById("map"),
+    elements: elements,
+    wheelSensitivity: 0.2,
+    layout: { name: "cose", animate: false, padding: 24, nodeRepulsion: 9000, idealEdgeLength: 70 },
+    style: [
+      { selector: "node", style: {
+          "label": "data(label)", "font-size": 9, "text-valign": "bottom", "text-margin-y": 4,
+          "background-color": "#dee2e6", "width": 16, "height": 16,
+          "border-width": 1, "border-color": "#ffffff"
+      }},
+      { selector: 'node[type="site"]', style: {
+          "background-color": "#f1f3f5", "background-opacity": 0.85, "shape": "round-rectangle",
+          "label": "data(label)", "font-size": 12, "font-weight": "bold",
+          "text-valign": "top", "padding": 14, "border-color": "#ced4da"
+      }},
+      { selector: 'node[type="router"]', style: {
+          "background-color": "#495057", "shape": "diamond", "width": 26, "height": 26, "font-size": 10
+      }},
+      { selector: 'node[type="segment"]', style: {
+          "background-color": "#0d6efd", "shape": "round-rectangle",
+          "width": "mapData(asset_total, 0, 200, 40, 100)", "height": 26,
+          "color": "#ffffff", "font-size": 10, "text-valign": "center"
+      }},
+      { selector: 'node[type="segment-root"]', style: {
+          "background-color": "#e7f1ff", "border-color": "#0d6efd", "border-width": 2,
+          "shape": "round-rectangle", "label": "data(label)", "font-size": 12,
+          "font-weight": "bold", "text-valign": "top", "padding": 16
+      }},
+      { selector: 'node[type="system"]', style: {
+          "background-color": "#ffc107", "shape": "round-rectangle",
+          "width": "label", "height": 22, "padding": "6px", "font-size": 9
+      }},
+      { selector: 'node[type="asset"]', style: { "width": 16, "height": 16 }},
+      { selector: 'node[type="asset"][status="quiet"]', style: {
+          "opacity": 0.45, "border-style": "dashed", "border-width": 2, "border-color": "#adb5bd"
+      }},
+      { selector: "edge", style: {
+          "width": 1, "line-color": "#adb5bd", "curve-style": "bezier"
+      }},
+      { selector: 'edge[type="member"]', style: { "line-color": "#ffc107", "width": 1.5 }},
+      { selector: "edge[label]", style: {
+          "label": "data(label)", "font-size": 7, "color": "#6c757d", "text-rotation": "autorotate"
+      }},
+    ].concat(roleSelectors),
+  });
+
+  cy.on("tap", "node", function (event) {
+    const data = event.target.data();
+    if (data.url) { window.location.href = data.url; return; }
+    if (data.type === "asset") { showDetails(data); }
+  });
+
+  function esc(value) {
+    return String(value === undefined || value === null ? "" : value).replace(
+      /[&<>"']/g,
+      function (ch) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch]; }
+    );
+  }
+
+  function showDetails(data) {
+    const services = (data.services || []).map(function (item) {
+      return [item.product, item.version].filter(Boolean).join(" ") || item.service;
+    }).filter(Boolean).join("; ");
+    const ports = (data.ports || []).join(", ");
+    const role = data.role_manual
+      ? roleTitles[data.role_manual] + " (ручная)"
+      : (roleTitles[data.role] || "—") + (data.role !== "unknown" ? " (авто)" : "");
+    const rows = [
+      ["IP", data.ip], ["MAC", data.mac], ["Вендор", data.vendor], ["Имя", data.hostname],
+      ["Тип", role], ["ОС", data.os], ["Порты", ports], ["Службы / ПО", services],
+      ["ИС", (data.systems || []).join(", ")], ["Последний отклик", data.last_seen],
+      ["Статус", data.status === "active" ? "в сети" : "молчит"],
+    ];
+    document.getElementById("details").innerHTML =
+      '<h6 class="mb-3">' + esc(data.label) + "</h6><table class=\"table table-sm mb-0\">" +
+      rows.filter(function (row) { return row[1]; }).map(function (row) {
+        return '<tr><td class="text-secondary">' + row[0] + "</td><td>" + esc(row[1]) + "</td></tr>";
+      }).join("") + "</table>";
+  }
+})();
+</script>
+{% endblock %}

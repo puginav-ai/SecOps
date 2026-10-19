@@ -1,19 +1,25 @@
-"""UI реестра: сегменты (network scopes) и обзор активов (SDD §5.1–5.2)."""
+"""UI реестра: сегменты (network scopes), карта сети и обзор активов (SDD §5.1–5.2, §5.10)."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 
 from django.contrib import messages
-from django.db.models import Count, ProtectedError
+from django.db.models import Count, ProtectedError, Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.core.access import FULL_REGISTRY_ROLES, module_access, role_required, user_roles
+from apps.core.export import xlsx_response
+from apps.discovery.models import RouterDevice, ScanRun
 from apps.discovery.services import MISS_THRESHOLD
+from apps.discovery.tasks import scan_segment
+from apps.registry import mapdata
 from apps.registry.forms import PersonForm, SegmentForm, SystemComponentForm, SystemForm
-from apps.registry.models import Asset, Person, Segment, System, SystemComponent
+from apps.registry.models import Asset, Person, Segment, Site, System, SystemComponent
 
 NEW_ASSETS_HOURS = 24
 
@@ -226,3 +232,189 @@ def person_edit(request, pk: int):
         messages.success(request, f"«{person.fio}» сохранён")
         return redirect("registry:person_list")
     return render(request, "registry/person_form.html", {"form": form, "title": f"«{person.fio}»"})
+
+
+# --- карта сети (SDD §5.10) ------------------------------------------------------------
+
+ASSET_SORTS = {
+    "ip": ("ip",),
+    "-ip": ("-ip",),
+    "hostname": ("hostname", "ip"),
+    "role": ("role_auto", "ip"),
+    "last_seen": ("last_seen_at", "ip"),
+    "-last_seen": ("-last_seen_at", "ip"),
+}
+GRAPH_NODE_LIMIT = 400
+TABLE_ROW_LIMIT = 500
+XLSX_ROW_LIMIT = 5000
+
+
+def _base_query(request) -> str:
+    """Query-строка без sort — для ссылок сортировки в таблице."""
+    params = request.GET.copy()
+    params.pop("sort", None)
+    return params.urlencode()
+
+
+def _map_assets(segment: Segment, params):
+    """Активы сегмента с фильтрами карты: роль, вендор, порт, продукт, ИС, статус, поиск."""
+    assets = mapdata.asset_queryset().filter(segment=segment)
+
+    role = (params.get("role") or "").strip()
+    if role:
+        # ручная роль главнее: фильтр учитывает и её, и авто-классификацию
+        assets = assets.filter(
+            Q(device_role=role) | Q(device_role=Asset.DeviceRole.UNKNOWN, role_auto=role)
+        )
+    vendor = (params.get("vendor") or "").strip()
+    if vendor:
+        assets = assets.filter(mac_vendor__icontains=vendor)
+    port = (params.get("port") or "").strip()
+    if port.isdigit():
+        assets = assets.filter(ports__contains=[int(port)])
+    product = (params.get("product") or "").strip()
+    if product:
+        assets = assets.filter(software__icontains=product)
+    system = (params.get("system") or "").strip()
+    if system == "with":
+        assets = assets.filter(system_components__isnull=False).distinct()
+    elif system == "without":
+        assets = assets.filter(system_components__isnull=True)
+    status = (params.get("status") or "").strip()
+    if status == "active":
+        assets = assets.filter(miss_count__lt=MISS_THRESHOLD)
+    elif status == "quiet":
+        assets = assets.filter(miss_count__gte=MISS_THRESHOLD)
+    query = (params.get("q") or "").strip()
+    if query:
+        assets = assets.filter(
+            Q(ip__icontains=query) | Q(hostname__icontains=query) | Q(mac__icontains=query)
+        )
+    return assets
+
+
+@role_required("registry")
+def network_map(request):
+    """Карта сети: обзор «площадки → роутеры → сегменты» или состав выбранного сегмента."""
+    segments = Segment.objects.select_related("site").order_by("site__name", "name")
+    segment = None
+    segment_id = (request.GET.get("segment") or "").strip()
+    if segment_id.isdigit():
+        segment = get_object_or_404(segments, pk=int(segment_id))
+    site_param = (request.GET.get("site") or "").strip()
+    site_id = int(site_param) if site_param.isdigit() else None
+
+    context: dict = {
+        "sites": Site.objects.all(),
+        "segments": segments.filter(site_id=site_id) if site_id else segments,
+        "site_id": site_id,
+        "segment": segment,
+        "can_edit": module_access(request.user, "registry") == "rw",
+        "roles": Asset.DeviceRole.choices,
+        "miss_threshold": MISS_THRESHOLD,
+        "filters": {
+            key: (request.GET.get(key) or "").strip()
+            for key in ("role", "vendor", "port", "product", "system", "status", "q", "sort")
+        },
+    }
+
+    if segment is None:
+        context["graph"] = mapdata.overview_graph(site_id)
+        context["routers_total"] = RouterDevice.objects.count()
+        return render(request, "registry/map.html", context)
+
+    assets = _map_assets(segment, request.GET)
+    sort = context["filters"]["sort"] if context["filters"]["sort"] in ASSET_SORTS else "ip"
+    ordered = assets.order_by(*ASSET_SORTS[sort])
+    graph_assets = list(ordered[:GRAPH_NODE_LIMIT])
+    context.update(
+        {
+            "graph": mapdata.segment_graph(segment, graph_assets),
+            "graph_total": assets.count(),
+            "graph_shown": len(graph_assets),
+            "assets": list(ordered[:TABLE_ROW_LIMIT]),
+            "assets_total": assets.count(),
+            "active_total": assets.filter(miss_count__lt=MISS_THRESHOLD).count(),
+            "quiet_total": assets.filter(miss_count__gte=MISS_THRESHOLD).count(),
+            "unknown_total": assets.filter(system_components__isnull=True).count(),
+            "systems": System.objects.filter(components__asset__segment=segment)
+            .distinct()
+            .order_by("name"),
+            "vendors": Asset.objects.filter(segment=segment)
+            .exclude(mac_vendor="")
+            .values_list("mac_vendor", flat=True)
+            .distinct()
+            .order_by("mac_vendor")[:80],
+            "base_query": _base_query(request),
+        }
+    )
+    return render(request, "registry/map.html", context)
+
+
+@role_required("registry", "rw")
+@require_POST
+def segment_scan_now(request, pk: int):
+    """«Просканировать сейчас»: ручной запуск скана сегмента (окно скана не проверяется)."""
+    segment = get_object_or_404(Segment, pk=pk)
+    target = f"{reverse('registry:network_map')}?segment={segment.pk}"
+    if not segment.scan_enabled:
+        messages.error(
+            request, f"Скан сегмента «{segment.name}» выключен — включите его в карточке"
+        )
+        return redirect(target)
+    scan_segment.apply_async(args=[segment.pk, ScanRun.Trigger.MANUAL.value], queue="scan")
+    messages.success(request, f"Скан сегмента «{segment.name}» поставлен в очередь")
+    return redirect(target)
+
+
+@role_required("registry")
+def segment_assets_xlsx(request):
+    """Выгрузка состава сегмента с текущими фильтрами карты (SDD §5.10)."""
+    segment_id = (request.GET.get("segment") or "").strip()
+    if not segment_id.isdigit():
+        raise Http404("выгрузка доступна для конкретного сегмента")
+    segment = get_object_or_404(Segment, pk=int(segment_id))
+
+    assets = _map_assets(segment, request.GET).order_by("ip")[:XLSX_ROW_LIMIT]
+    role_titles = dict(Asset.DeviceRole.choices)
+    rows = []
+    for asset in assets:
+        rows.append(
+            [
+                asset.ip,
+                asset.mac or "—",
+                asset.mac_vendor or "—",
+                asset.hostname or "—",
+                role_titles.get(asset.device_role, ""),
+                role_titles.get(asset.role_auto, "")
+                if asset.device_role == Asset.DeviceRole.UNKNOWN
+                else "",
+                asset.os_name or asset.os_family or "—",
+                ", ".join(str(port) for port in (asset.ports or [])),
+                asset.software or "—",
+                "; ".join(component.system.name for component in asset.system_components.all())
+                or "—",
+                str(asset.owner_person) if asset.owner_person else "—",
+                timezone.localtime(asset.last_seen_at).strftime("%d.%m.%Y %H:%M"),
+                "в сети" if asset.miss_count < MISS_THRESHOLD else "молчит",
+            ]
+        )
+    return xlsx_response(
+        f"segment-{segment.pk}-assets.xlsx",
+        [
+            "IP",
+            "MAC",
+            "Вендор",
+            "Имя",
+            "Роль (ручная)",
+            "Роль (авто)",
+            "ОС",
+            "Порты",
+            "Службы/ПО",
+            "ИС",
+            "Ответственный",
+            "Последний отклик",
+            "Статус",
+        ],
+        rows,
+    )
