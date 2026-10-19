@@ -13,6 +13,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # Тесты не зависят от локального .env: dev-режим реестра управляется только фикстурой settings
 REGISTRY_OPEN_ACCESS = False
+OPEN_ACCESS_USER = ""
 # Дополнительные источники пассивных данных включаются только в тестах, где они нужны
 MIKROTIK_EXTRA_ROUTERS = []
 

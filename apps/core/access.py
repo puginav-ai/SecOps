@@ -93,7 +93,8 @@ def is_owner_only(user) -> bool:
 def module_access(user, module: str) -> str:
     """Итоговый доступ к модулю: максимум по ролям; суперпользователь — «rw» везде."""
     if not user.is_authenticated:
-        # временный dev-режим: реестр открыт без входа (ADR §4), остальные модули — нет
+        # Запасной путь dev-режима (ADR §4): если OpenAccessMiddleware не подставил
+        # пользователя (OPEN_ACCESS_USER пуст/не найден), открыт только реестр.
         if module == "registry" and settings.REGISTRY_OPEN_ACCESS:
             return "rw"
         return ""
@@ -118,8 +119,9 @@ def role_required(module: str, level: str = "r") -> Callable:
     """Пускает во view, если доступ к модулю не ниже level ("r" | "rw").
 
     Анонимные пользователи перенаправляются на логин, авторизованные без доступа —
-    403 (PermissionDenied). Исключение: временный dev-режим REGISTRY_OPEN_ACCESS
-    открывает модуль registry анонимам (ADR §4); для вошедших матрица ролей не меняется.
+    403 (PermissionDenied). Исключение: dev-режим REGISTRY_OPEN_ACCESS (ADR §4) — анонима
+    превращает в пользователя middleware OpenAccessMiddleware, а при пустом OPEN_ACCESS_USER
+    открыт только модуль registry; для вошедших матрица ролей не меняется.
     """
 
     def decorator(view_func: Callable) -> Callable:

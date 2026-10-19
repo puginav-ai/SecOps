@@ -10,11 +10,15 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.http import HttpRequest, HttpResponse
 
 from apps.core.models import AuditLog
 
 logger = logging.getLogger(__name__)
+
+_open_access_warn_emitted = False
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 EXEMPT_PREFIXES = ("/accounts/login/", "/accounts/logout/")
@@ -56,3 +60,37 @@ class AuditLogMiddleware:
             # shortcut: запись вне транзакции мутации — при переносе логики в сервисный слой
             # писать аудит в той же транзакции, что и мутацию.
             logger.exception("audit_log: не удалось записать событие", extra={"path": request.path})
+
+
+class OpenAccessMiddleware:
+    """Dev-режим «без входа»: анонимные запросы выполняются от имени OPEN_ACCESS_USER (ADR §4).
+
+    Пока `REGISTRY_OPEN_ACCESS=1`, логин не требуется: дашборд, отчёты и запись доступны
+    анонимно, а мутации попадают в `audit_log` от имени настроенного пользователя (у режима
+    «только реестр» актор оставался пустым). Если пользователь не найден — предупреждаем в
+    лог и работает только историческое поведение (открытый реестр). Перед сдачей выключить:
+    консоль целиком без авторизации — недопустимо для эксплуатации.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        global _open_access_warn_emitted
+        if settings.REGISTRY_OPEN_ACCESS and not request.user.is_authenticated:
+            user = None
+            if settings.OPEN_ACCESS_USER:
+                user = (
+                    get_user_model()
+                    .objects.filter(username=settings.OPEN_ACCESS_USER, is_active=True)
+                    .first()
+                )
+            if user is not None:
+                request.user = user
+            elif not _open_access_warn_emitted:
+                _open_access_warn_emitted = True
+                logger.warning(
+                    "OPEN_ACCESS_USER=%r не найден: открытый доступ действует только для реестра.",
+                    settings.OPEN_ACCESS_USER,
+                )
+        return self.get_response(request)

@@ -41,6 +41,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.core.middleware.OpenAccessMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.AuditLogMiddleware",
@@ -143,8 +144,11 @@ SESSION_COOKIE_AGE = env_int("SESSION_COOKIE_AGE", 8 * 3600)  # default 8 ч (П
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 
-# Временный dev-режим: реестр открыт без входа (ADR §4). В prod не включать.
+# Временный dev-режим: консоль открыта без входа (ADR §4). В prod не включать.
 REGISTRY_OPEN_ACCESS = env("REGISTRY_OPEN_ACCESS", "0") != "0"
+# Пользователь, от имени которого работают анонимные запросы в dev-режиме
+# (OpenAccessMiddleware). Если пусто/не найден — открыт только реестр, как раньше.
+OPEN_ACCESS_USER = env("OPEN_ACCESS_USER", "")
 
 # Почта: SMTP подключается реквизитами (неделя 6). До этого — console-бэкенд.
 EMAIL_HOST = env("EMAIL_HOST", "")
