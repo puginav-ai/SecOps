@@ -322,9 +322,7 @@ def network_map(request):
         graph = mapdata.overview_graph(site_id)
         context["graph"] = graph
         context["graph_types"] = {node["data"]["type"] for node in graph["nodes"]}
-        context["graph_edge_types"] = {
-            edge["data"].get("type", "plain") for edge in graph["edges"]
-        }
+        context["graph_edge_types"] = {edge["data"].get("type", "plain") for edge in graph["edges"]}
         context["routers_total"] = RouterDevice.objects.count()
         return render(request, "registry/map.html", context)
 
@@ -337,9 +335,7 @@ def network_map(request):
         {
             "graph": graph,
             "graph_types": {node["data"]["type"] for node in graph["nodes"]},
-            "graph_edge_types": {
-                edge["data"].get("type", "plain") for edge in graph["edges"]
-            },
+            "graph_edge_types": {edge["data"].get("type", "plain") for edge in graph["edges"]},
             "legend_roles": mapdata.legend_roles(graph_assets),
             "legend_quiet": any(asset.miss_count >= MISS_THRESHOLD for asset in graph_assets),
             "graph_total": assets.count(),

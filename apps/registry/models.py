@@ -59,6 +59,7 @@ class Segment(models.Model):
     class ScanProfile(models.TextChoices):
         PING = "ping", "только ping-sweep"
         TOP100 = "top100", "top-100 портов"
+        TOP100_SERVICES = "top100_services", "top-100 + версии служб"
 
     site = models.ForeignKey(
         Site, verbose_name="площадка", on_delete=models.PROTECT, related_name="segments"
@@ -77,7 +78,7 @@ class Segment(models.Model):
     )
     scan_enabled = models.BooleanField("скан разрешён", default=False)
     scan_profile = models.CharField(
-        "профиль скана", max_length=10, choices=ScanProfile.choices, default=ScanProfile.PING
+        "профиль скана", max_length=20, choices=ScanProfile.choices, default=ScanProfile.PING
     )
     scan_window = models.JSONField("окно скана", default=default_scan_window)
     last_scan_at = models.DateTimeField("последний скан", null=True, blank=True)
@@ -100,6 +101,8 @@ class Asset(models.Model):
         NETWORK = "network", "сетевое оборудование"
         MEDICAL = "medical", "медицинское изделие"
         PRINTER = "printer", "печать/МФУ"
+        PHONE = "phone", "телефон/IP-телефон"
+        CAMERA = "camera", "видеокамера"
         OTHER = "other", "прочее"
         UNKNOWN = "unknown", "не определена"
 
@@ -120,9 +123,13 @@ class Asset(models.Model):
     # и новый актив; «активный» = miss_count < MISS_THRESHOLD. При нескольких воркерах
     # скана — partial unique index.
     mac = models.CharField("MAC", max_length=17, blank=True, default="")
+    mac_vendor = models.CharField("вендор (MAC OUI)", max_length=120, blank=True, default="")
     hostname = models.CharField("имя хоста", max_length=255, blank=True, default="")
     os_family = models.CharField("семейство ОС", max_length=50, blank=True, default="")
     os_name = models.CharField("ОС", max_length=120, blank=True, default="")
+    software = models.CharField(
+        "службы/ПО", max_length=500, blank=True, default="", help_text="Из nmap -sV (SDD §5.10)"
+    )
     site = models.ForeignKey(
         Site,
         verbose_name="площадка",
@@ -141,6 +148,14 @@ class Asset(models.Model):
     )
     device_role = models.CharField(
         "роль", max_length=20, choices=DeviceRole.choices, default=DeviceRole.UNKNOWN
+    )
+    role_auto = models.CharField(
+        "роль (авто)",
+        max_length=20,
+        choices=DeviceRole.choices,
+        blank=True,
+        default="",
+        help_text="Классификация по портам/вендору/имени (SDD §5.10); пусто — не определена",
     )
     criticality = models.CharField(
         "критичность", max_length=10, choices=Criticality.choices, default=Criticality.LOW
