@@ -1,6 +1,7 @@
 """Выгрузка списка машин: DHCP-аренды + ARP-таблицы роутеров → ops/audit/machines.txt.
 
-Колонки TSV: ip, hostname, mac, источник (dhcp|arp|dhcp+arp), контур (кампус|КПЦ).
+Источники: основной роутер (кампус) + все дополнительные из `MIKROTIK_EXTRA_ROUTERS`.
+Колонки TSV: ip, hostname, mac, источник (dhcp|arp|dhcp+arp), контур.
 Запуск: make audit-list. Секретов не печатает.
 """
 
@@ -20,13 +21,13 @@ django.setup()
 import librouteros  # noqa: E402
 from django.conf import settings  # noqa: E402
 
-KPC_ROUTER = "192.168.110.2"
-KPC_USER = "specops-collector"
 ZERO_MAC = "00:00:00:00:00:00"
 
 
 def _connect(host: str, user: str) -> librouteros.api.Api:  # type: ignore[name-defined]
-    return librouteros.connect(host, user, settings.MIKROTIK_API_PASSWORD, port=8728, timeout=10)
+    return librouteros.connect(
+        host, user, settings.MIKROTIK_API_PASSWORD, port=8728, timeout=10, encoding="UTF-8"
+    )
 
 
 def _valid_ip(ip: str) -> bool:
@@ -41,9 +42,24 @@ def _valid_mac(mac: str) -> bool:
     return bool(mac) and mac.lower() != ZERO_MAC
 
 
+def _sources() -> list[tuple[str, str, str]]:
+    """(host, user, метка контура): основной роутер + дополнительные из настроек."""
+    sources = [(settings.MIKROTIK_HOST, settings.MIKROTIK_API_USER, "кампус")]
+    for router in settings.MIKROTIK_EXTRA_ROUTERS:
+        sources.append(
+            (
+                str(router.get("host", "")),
+                str(router.get("user", "admin")),
+                str(router.get("name") or router.get("host", "")),
+            )
+        )
+    return sources
+
+
 def main() -> None:
     rows: dict[str, dict[str, str]] = {}
 
+    # DHCP-аренды основного роутера — источник имён
     api = _connect(settings.MIKROTIK_HOST, settings.MIKROTIK_API_USER)
     try:
         for lease in api.path("ip", "dhcp-server", "lease"):
@@ -54,30 +70,29 @@ def main() -> None:
             row = rows.setdefault(ip, {"host": "", "mac": "", "src": "", "site": "кампус"})
             row["host"] = str(lease.get("host-name", "")).strip().strip("-")
             row["src"] = "dhcp"
-        for arp in api.path("ip", "arp"):
-            arp = dict(arp)
-            ip, mac = str(arp.get("address", "")), str(arp.get("mac-address") or "")
-            if not _valid_ip(ip) or not _valid_mac(mac):
-                continue
-            row = rows.setdefault(ip, {"host": "", "mac": "", "src": "", "site": "кампус"})
-            row["mac"] = mac.lower()
-            row["src"] = "dhcp+arp" if row["src"] == "dhcp" else (row["src"] or "arp")
     finally:
         api.close()
 
-    try:
-        kpc = _connect(KPC_ROUTER, KPC_USER)
+    # ARP всех роутеров
+    for host, user, label in _sources():
+        if not host:
+            continue
         try:
-            for arp in kpc.path("ip", "arp"):
+            router = _connect(host, user)
+        except Exception as exc:
+            print(f"{label} ({host}) недоступен: {type(exc).__name__}")
+            continue
+        try:
+            for arp in router.path("ip", "arp"):
                 arp = dict(arp)
                 ip, mac = str(arp.get("address", "")), str(arp.get("mac-address") or "")
-                if not _valid_ip(ip) or not _valid_mac(mac) or ip in rows:
+                if not _valid_ip(ip) or not _valid_mac(mac):
                     continue
-                rows[ip] = {"host": "", "mac": mac.lower(), "src": "arp", "site": "КПЦ"}
+                row = rows.setdefault(ip, {"host": "", "mac": "", "src": "", "site": label})
+                row["mac"] = mac.lower()
+                row["src"] = "dhcp+arp" if row["src"] == "dhcp" else (row["src"] or "arp")
         finally:
-            kpc.close()
-    except Exception as exc:  # роутер КПЦ может быть недоступен — список всё равно собирается
-        print(f"КПЦ недоступен ({type(exc).__name__}): {str(exc)[:80]} — собираю только кампус")
+            router.close()
 
     ordered = sorted(rows.items(), key=lambda item: ipaddress.ip_address(item[0]))
     out = Path(__file__).with_name("machines.txt")
