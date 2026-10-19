@@ -8,6 +8,8 @@ from collector.classify import classify_role
 def test_network_vendor_wins():
     assert classify_role([], vendor="Routerboard.com") == "network"
     assert classify_role([80], vendor="Cisco Systems, Inc") == "network"
+    # «Континент» Кода Безопасности регистрировал OUI как New platforms LLC
+    assert classify_role([], vendor="New platforms LLC") == "network"
 
 
 def test_printer_ports_and_vendor():

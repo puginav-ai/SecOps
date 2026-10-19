@@ -436,6 +436,15 @@ def search_map(query: str) -> dict:
             )
             if assets:
                 match = "name"
+        if not assets:
+            # Последний рубеж — вендор («new platforms» → Континенты, «hp» → печать)
+            assets = list(
+                Asset.objects.select_related("segment")
+                .filter(mac_vendor__icontains=raw)
+                .order_by("ip")[:20]
+            )
+            if assets:
+                match = "vendor"
 
     if assets:
         ids = {asset.segment_id for asset in assets if asset.segment_id}

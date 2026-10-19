@@ -259,17 +259,32 @@
       {% if found %}
         <div class="small mt-2" role="status">
           {% if found.assets %}
-            {% if found.match == "name" %}Совпадение по имени, в IP-адресах нет: {% else %}Найдено: {% endif %}{% for a in found.assets|slice:":3" %}<span class="fw-semibold">{{ a.ip }}</span>{% if a.hostname %} · {{ a.hostname }}{% endif %} → <a href="?segment={{ a.segment_id }}">{{ a.segment }}</a>{% if not forloop.last %}; {% endif %}{% endfor %}
-            {% if found.assets|length > 3 %} и ещё {{ found.assets|length|add:"-3" }}{% endif %}
+            <div>
+              {% if found.match == "name" %}Совпадение по имени, в IP-адресах нет:
+              {% elif found.match == "vendor" %}Совпадение по вендору устройства:
+              {% else %}Найдено:{% endif %}
+            </div>
+            <ul class="mb-0 ps-3">
+              {% for a in found.assets %}
+                <li>
+                  <span class="fw-semibold">{{ a.ip }}</span>{% if a.hostname %} · {{ a.hostname }}{% endif %}{% if found.match == "vendor" %} · {{ a.mac_vendor }}{% endif %}
+                  → <a href="?segment={{ a.segment_id }}">{{ a.segment }}</a>
+                </li>
+              {% endfor %}
+            </ul>
           {% elif found.segments %}
-            {% if found.match == "segment" %}Сегмент по имени: {% else %}Подсеть найдена, активы ещё не обнаружены: {% endif %}{% for s in found.segments %}<span class="fw-semibold">{{ s.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
+            <div>{% if found.match == "segment" %}Сегмент по имени:{% else %}Подсеть найдена, активы ещё не обнаружены:{% endif %}</div>
+            <ul class="mb-0 ps-3">
+              {% for s in found.segments %}<li>{{ s.name }} · <code>{{ s.cidr }}</code></li>{% endfor %}
+            </ul>
           {% else %}
             По запросу «{{ found.query }}» ничего не найдено — проверьте IP или имя.
           {% endif %}
         </div>
       {% else %}
         <div class="small text-secondary mt-2">
-          Поиск сначала по IP (192.168.0.191, 192,168,0,191 или фрагмент 191), затем по имени актива или сегмента.
+          Поиск сначала по IP (192.168.0.191, 192,168,0,191 или фрагмент 191), затем по имени
+          актива, вендору (например «new platforms» или «hp») и имени сегмента.
         </div>
       {% endif %}
     </div>

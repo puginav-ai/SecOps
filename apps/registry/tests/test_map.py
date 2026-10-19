@@ -133,6 +133,15 @@ def test_search_map_unknown_ip_falls_back_to_known_subnet(segment: Segment) -> N
     assert found["segment_ids"] == [segment.pk]  # актив ещё не найден, но подсеть известна
 
 
+def test_search_map_by_vendor(segment: Segment) -> None:
+    make_asset(segment, "10.70.1.10", mac_vendor="New platforms LLC")
+
+    found = mapdata.search_map("new platforms")
+
+    assert found["match"] == "vendor"
+    assert [asset.ip for asset in found["assets"]] == ["10.70.1.10"]
+
+
 def test_search_map_by_segment_name(segment: Segment) -> None:
     found = mapdata.search_map("Сегмент-Карт")
 
