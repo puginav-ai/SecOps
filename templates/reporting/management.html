@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Отчёт руководству{% endblock %}
+
+{% block content %}
+<style>
+@media print {
+  .navbar, .no-print { display: none !important; }
+  body { background: #fff !important; }
+  .card { box-shadow: none !important; border: 0; }
+}
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Отчёт руководству</h1>
+  <div class="no-print">
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">Печать</button>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'reporting:index' %}">← Отчёты</a>
+  </div>
+</div>
+<p class="text-secondary mb-3">
+  Сформирован {{ generated_at|date:"d.m.Y H:i" }} · цифры, риски, план, КЗИ — на одну страницу.
+</p>
+
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-2 mb-3">
+  <div class="col"><div class="card h-100"><div class="card-body py-2">
+    <div class="text-secondary small">Активы (в сети)</div>
+    <div class="h5 mb-0">{{ assets_active }} <span class="text-secondary fs-6">/ {{ assets_total }}</span></div>
+  </div></div></div>
+  <div class="col"><div class="card h-100"><div class="card-body py-2">
+    <div class="text-secondary small">ИС в реестре</div>
+    <div class="h5 mb-0">{{ systems_total }}</div>
+  </div></div></div>
+  <div class="col"><div class="card h-100"><div class="card-body py-2">
+    <div class="text-secondary small">Пробелы контролей</div>
+    <div class="h5 mb-0">{{ gaps_total }}</div>
+  </div></div></div>
+  <div class="col"><div class="card h-100"><div class="card-body py-2">
+    <div class="text-secondary small">Инциденты (открыто)</div>
+    <div class="h5 mb-0">{{ incidents_open }}
+      {% if incident_overdue_count %}<span class="text-danger fs-6">/ просроч. стадий {{ incident_overdue_count }}</span>{% endif %}
+    </div>
+  </div></div></div>
+  <div class="col"><div class="card h-100"><div class="card-body py-2">
+    <div class="text-secondary small">Просрочено обязательств</div>
+    <div class="h5 mb-0 {% if obligations_overdue %}text-danger{% endif %}">{{ obligations_overdue }}</div>
+  </div></div></div>
+  <div class="col"><div class="card h-100"><div class="card-body py-2">
+    <div class="text-secondary small">Evidence истекает (30 дн.)</div>
+    <div class="h5 mb-0">{{ evidence_expiring_total }}</div>
+  </div></div></div>
+</div>
+
+<h2 class="h6">Риски</h2>
+<div class="row g-2 mb-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body py-2">
+      <div class="fw-semibold mb-1">Просроченные обязательства</div>
+      <table class="table table-sm mb-0">
+        <tbody>
+          {% for item in overdue_top %}
+            <tr><td>{{ item.template.name }}</td><td class="text-nowrap">{{ item.due_at|date:"d.m.Y" }}</td></tr>
+          {% empty %}
+            <tr><td class="text-secondary">нет</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body py-2">
+      <div class="fw-semibold mb-1">Просроченные стадии инцидентов</div>
+      <table class="table table-sm mb-0">
+        <tbody>
+          {% for stage in incident_overdue_top %}
+            <tr><td>#{{ stage.incident_id }} · {{ stage.stage_code }}</td><td class="text-nowrap">{{ stage.deadline_at|date:"d.m.Y H:i" }}</td></tr>
+          {% empty %}
+            <tr><td class="text-secondary">нет</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body py-2">
+      <div class="fw-semibold mb-1">Evidence истекает</div>
+      <table class="table table-sm mb-0">
+        <tbody>
+          {% for item in evidence_expiring %}
+            <tr><td>{{ item.title|truncatechars:50 }}</td><td class="text-nowrap">{{ item.valid_until|date:"d.m.Y" }}</td></tr>
+          {% empty %}
+            <tr><td class="text-secondary">нет</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body py-2">
+      <div class="fw-semibold mb-1">Неизвестные активы</div>
+      <div class="h5 mb-0">{{ unknown_assets|default_if_none:"—" }}</div>
+      <div class="text-secondary small">активы без ИС и ответственного — разбираются ИТ/ИБ</div>
+    </div></div>
+  </div>
+</div>
+
+<h2 class="h6">План мероприятий (открытые задачи)</h2>
+<div class="card mb-3"><div class="table-responsive">
+  <table class="table table-sm mb-0">
+    <thead><tr><th>Задача</th><th>ИС</th><th>Ответственный</th><th>Срок</th></tr></thead>
+    <tbody>
+      {% for task in plan_tasks %}
+        <tr>
+          <td>{{ task.title }}</td>
+          <td>{{ task.system|default:"—" }}</td>
+          <td>{{ task.owner_person|default:"—" }}</td>
+          <td class="text-nowrap">{{ task.due_at|date:"d.m.Y"|default:"—" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="text-secondary">открытых задач нет</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<h2 class="h6">КЗИ</h2>
+{% if last_assessment %}
+  <p class="mb-0">
+    Последняя закрытая оценка: <strong>{{ last_assessment.result_value }}</strong>
+    ({{ last_assessment.verdict }}, {{ last_assessment.get_assessment_type_display }},
+    {{ last_assessment.assessed_at|date:"d.m.Y" }}) ·
+    <a class="no-print" href="{% url 'kzi:detail' last_assessment.pk %}">почему не 1 →</a>
+  </p>
+{% else %}
+  <p class="text-secondary mb-0">Закрытых оценок КЗИ/ПЗИ пока нет.</p>
+{% endif %}
+{% endblock %}

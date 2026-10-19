@@ -41,3 +41,39 @@ def test_reader_can_view_reports_and_export(client, login, make_user) -> None:
 
     assert client.get("/reports/").status_code == 200
     assert client.get("/reports/overdue.csv").status_code == 200
+
+
+def test_xlsx_exports_are_loadable(client, login, make_user) -> None:
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from apps.core.export import XLSX_CONTENT_TYPE
+
+    client = login(make_user("officer-xlsx", role="ib_officer"))
+
+    response = client.get("/reports/gaps.xlsx")
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == XLSX_CONTENT_TYPE
+    workbook = load_workbook(BytesIO(response.content))
+    header = [cell.value for cell in next(workbook.active.iter_rows(max_row=1))]
+    assert header[0] == "Код"
+    for url in (
+        "/reports/overdue.xlsx",
+        "/reports/evidence.xlsx",
+        "/reports/unknown-assets.xlsx",
+        "/reports/kzi.xlsx",
+    ):
+        assert client.get(url).status_code == 200
+
+
+def test_management_report_renders_one_pager(client, login, make_user) -> None:
+    client = login(make_user("boss-mgmt", role="reader"))
+
+    response = client.get("/reports/management/")
+    body = response.content.decode()
+
+    assert response.status_code == 200
+    for marker in ("Отчёт руководству", "Риски", "План мероприятий", "КЗИ"):
+        assert marker in body

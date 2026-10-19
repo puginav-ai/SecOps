@@ -5,23 +5,27 @@
 <h1 class="h3 mb-1">Отчёты</h1>
 <p class="text-secondary mb-3">
   Состояние контролей, просрочки, покрытие evidence, КЗИ.
+  <a href="{% url 'reporting:management' %}">Отчёт руководству (1 стр.) →</a>
 </p>
 
 <div class="row row-cols-2 row-cols-md-4 g-3 mb-4">
   <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
     <div class="text-secondary small">Пробелы контролей</div>
     <div class="h4 mb-0">{{ gaps_total }}</div>
-    <a class="small" href="{% url 'reporting:gaps_csv' %}">выгрузка CSV →</a>
+    <a class="small" href="{% url 'reporting:gaps_csv' %}">CSV →</a>
+    <a class="small" href="{% url 'reporting:gaps_xlsx' %}">XLSX →</a>
   </div></div></div>
   <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
     <div class="text-secondary small">Просрочено обязательств</div>
     <div class="h4 mb-0 text-danger">{{ overdue_total }}</div>
-    <a class="small" href="{% url 'reporting:overdue_csv' %}">выгрузка CSV →</a>
+    <a class="small" href="{% url 'reporting:overdue_csv' %}">CSV →</a>
+    <a class="small" href="{% url 'reporting:overdue_xlsx' %}">XLSX →</a>
   </div></div></div>
   <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
     <div class="text-secondary small">Unknown assets</div>
     <div class="h4 mb-0">{{ unknown_assets|default_if_none:"—" }}</div>
     <a class="small" href="{% url 'registry:unknown_assets' %}">разобрать →</a>
+    <a class="small" href="{% url 'reporting:unknown_xlsx' %}">XLSX →</a>
   </div></div></div>
   <div class="col"><div class="card shadow-sm h-100"><div class="card-body">
     <div class="text-secondary small">Evidence (истекает 30 дн.)</div>
@@ -70,7 +74,9 @@
   </table>
 </div></div>
 
-<h2 class="h5">Покрытие evidence по видам</h2>
+<h2 class="h5">Покрытие evidence по видам
+  <a class="small ms-2" href="{% url 'reporting:evidence_xlsx' %}">XLSX →</a>
+</h2>
 <div class="card shadow-sm mb-4"><div class="table-responsive">
   <table class="table table-sm mb-0">
     <tbody>
@@ -83,7 +89,9 @@
   </table>
 </div></div>
 
-<h2 class="h5">Оценки КЗИ/ПЗИ</h2>
+<h2 class="h5">Оценки КЗИ/ПЗИ
+  <a class="small ms-2" href="{% url 'reporting:kzi_xlsx' %}">XLSX →</a>
+</h2>
 <div class="card shadow-sm"><div class="table-responsive">
   <table class="table table-sm align-middle mb-0">
     <thead><tr><th>Тип</th><th>Период</th><th>Статус</th><th>Результат</th><th>Вердикт</th><th></th></tr></thead>
