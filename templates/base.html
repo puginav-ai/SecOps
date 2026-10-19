@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Пульт ИБ{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
+  {% block styles %}{% endblock %}
   <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
   <script src="{% static 'vendor/alpine.min.js' %}" defer></script>
 </head>

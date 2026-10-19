@@ -2,14 +2,11 @@
 {% load static %}
 {% block title %}Карта сети{% endblock %}
 
+{% block styles %}
+<link rel="stylesheet" href="{% static 'vendor/bootstrap-icons.min.css' %}">
+{% endblock %}
+
 {% block content %}
-<style>
-  .legend-dot {
-    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-    margin-right: 5px; vertical-align: middle;
-  }
-  .legend-dot.dashed { border: 2px dashed #adb5bd; background: transparent !important; }
-</style>
 <div class="d-flex justify-content-between align-items-center mb-1">
   <h1 class="h3 mb-0">Карта сети</h1>
   <div class="text-secondary small">данные — из discovery (ARP, DHCP, nmap, роутеры)</div>
@@ -111,20 +108,22 @@
 
   <div class="row g-3">
     <div class="col-xl-8">
-      <div class="card shadow-sm h-100"><div class="card-body p-0">
-        <div id="map" style="height: 68vh; min-height: 420px;"></div>
-      </div></div>
-      <div class="d-flex flex-wrap gap-3 small text-secondary mt-2">
-        <span><span class="legend-dot" style="background:#0b7285"></span>сервер</span>
-        <span><span class="legend-dot" style="background:#4dabf7"></span>АРМ</span>
-        <span><span class="legend-dot" style="background:#e8590c"></span>печать/МФУ</span>
-        <span><span class="legend-dot" style="background:#495057"></span>сетевое</span>
-        <span><span class="legend-dot" style="background:#c92a2a"></span>медизделие</span>
-        <span><span class="legend-dot" style="background:#12b886"></span>телефон</span>
-        <span><span class="legend-dot" style="background:#7048e8"></span>видеокамера</span>
-        <span><span class="legend-dot" style="background:#dee2e6"></span>тип не определён</span>
-        <span><span class="legend-dot" style="background:#ffc107"></span>ИС</span>
-        <span><span class="legend-dot dashed"></span>молчит</span>
+      <div class="card shadow-sm h-100">
+        <div class="card-body p-0">
+          <div id="map" style="height: 68vh; min-height: 420px;"></div>
+        </div>
+        <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
+          <span><i class="bi bi-server" style="color:#0b7285"></i> сервер</span>
+          <span><i class="bi bi-display" style="color:#4dabf7"></i> АРМ</span>
+          <span><i class="bi bi-printer" style="color:#e8590c"></i> печать/МФУ</span>
+          <span><i class="bi bi-router" style="color:#495057"></i> сетевое</span>
+          <span><i class="bi bi-heart-pulse" style="color:#c92a2a"></i> медизделие</span>
+          <span><i class="bi bi-telephone" style="color:#12b886"></i> телефон</span>
+          <span><i class="bi bi-camera-video" style="color:#7048e8"></i> видеокамера</span>
+          <span><i class="bi bi-question-circle" style="color:#adb5bd"></i> тип не определён</span>
+          <span><i class="bi bi-diagram-3" style="color:#ffc107"></i> ИС</span>
+          <span><i class="bi bi-wifi-off" style="color:#adb5bd"></i> молчит</span>
+        </div>
       </div>
     </div>
     <div class="col-xl-4">
@@ -192,14 +191,16 @@
     </table>
   </div></div>
 {% else %}
-  <div class="card shadow-sm mb-3"><div class="card-body p-0">
-    <div id="map" style="height: 62vh; min-height: 400px;"></div>
-  </div></div>
-  <div class="d-flex flex-wrap gap-3 small text-secondary mb-3">
-    <span><span class="legend-dot" style="background:#495057"></span>роутер</span>
-    <span><span class="legend-dot" style="background:#0d6efd"></span>сегмент</span>
-    <span><span class="legend-dot" style="background:#f1f3f5;border:1px solid #ced4da"></span>площадка</span>
-    <span>клик по сегменту — состав сегмента</span>
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-0">
+      <div id="map" style="height: 62vh; min-height: 400px;"></div>
+    </div>
+    <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
+      <span><i class="bi bi-router" style="color:#495057"></i> роутер</span>
+      <span><i class="bi bi-diagram-2" style="color:#0d6efd"></i> сегмент</span>
+      <span><i class="bi bi-building" style="color:#adb5bd"></i> площадка</span>
+      <span>клик по сегменту — состав сегмента</span>
+    </div>
   </div>
 
   <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
