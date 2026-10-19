@@ -17,10 +17,10 @@ scan-up:
 audit-list:
 	$(RUN) $(MOUNT) web python ops/audit/export_machines.py
 
-# Браузерный e2e по живой консоли (Playwright): сборка e2e-образа + прогон в сети compose.
+# Браузерный e2e по живой консоли (Playwright): прогон в сети compose, стенд — https://nginx.
 # Требует поднятого стека (make up) и E2E_USER/E2E_PASSWORD в .env.
 e2e:
-	$(COMPOSE) build web e2e
+	$(COMPOSE) build e2e
 	$(COMPOSE) run --rm --no-deps e2e
 
 down:

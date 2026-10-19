@@ -59,7 +59,9 @@ def main() -> int:
         page.goto(f"{BASE_URL}/accounts/login/", wait_until="domcontentloaded")
         page.fill('input[name="username"]', USER)
         page.fill('input[name="password"]', PASSWORD)
-        page.click('button[type="submit"], input[type="submit"]')
+        # Enter, а не клик по submit: в шапке есть ещё кнопка «Выйти» (submit-форма) —
+        # клик по первому submit уходил в logout (страница входа открыта и анониму)
+        page.press('input[name="password"]', "Enter")
         page.wait_for_load_state("domcontentloaded")
         if "/accounts/login" in page.url:
             failures.append("логин не прошёл: остались на странице входа")

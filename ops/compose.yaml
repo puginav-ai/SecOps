@@ -116,7 +116,7 @@ services:
       TZ: Asia/Yekaterinburg
       E2E_BASE_URL: https://nginx
     entrypoint: []
-    command: python ops/e2e/browser_smoke.py
+    command: python /app/browser_smoke.py
 
 volumes:
   pgdata:
