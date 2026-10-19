@@ -18,12 +18,13 @@ ZERO_MAC = "00:00:00:00:00:00"
 
 @dataclass(frozen=True)
 class RouterData:
-    """Выгрузка роутера: строки ARP, DHCP-аренды, имя и адреса интерфейсов."""
+    """Выгрузка роутера: ARP, DHCP-аренды, имя, адреса и соседи (MNDP/LLDP/CDP)."""
 
     arp: tuple[Mapping[str, str], ...] = ()
     leases: tuple[Mapping[str, str], ...] = ()
     identity: str = ""
     addresses: tuple[Mapping[str, str], ...] = ()
+    neighbors: tuple[Mapping[str, str], ...] = ()
 
 
 def fetch_router_data(
@@ -55,10 +56,41 @@ def fetch_router_data(
         )
         identity_rows = tuple(dict(row) for row in api.path("system", "identity"))
         addresses = tuple(dict(row) for row in api.path("ip", "address"))
+        neighbors = tuple(dict(row) for row in api.path("ip", "neighbor"))
     finally:
         api.close()
     identity = str(identity_rows[0].get("name", "")) if identity_rows else ""
-    return RouterData(arp=arp, leases=leases, identity=identity, addresses=addresses)
+    return RouterData(
+        arp=arp,
+        leases=leases,
+        identity=identity,
+        addresses=addresses,
+        neighbors=neighbors,
+    )
+
+
+def normalized_neighbors(rows: Iterable[Mapping[str, str]]) -> list[dict]:
+    """Строки /ip/neighbor → [{address, identity, interface, platform, mac}].
+
+    Соседи (MNDP/LLDP/CDP) — источник связей роутер—роутер на карте сети (SDD §5.10):
+    в строке соседа есть адрес, имя и локальный интерфейс, через который его видно.
+    """
+    result: list[dict] = []
+    for row in rows:
+        address = str(row.get("address", "")).strip()
+        identity = str(row.get("identity", "")).strip()
+        if not address and not identity:
+            continue
+        result.append(
+            {
+                "address": address,
+                "identity": identity,
+                "interface": str(row.get("interface", "")).strip(),
+                "platform": str(row.get("platform", "")).strip(),
+                "mac": str(row.get("mac-address", "")).strip().lower(),
+            }
+        )
+    return result
 
 
 def normalized_addresses(rows: Iterable[Mapping[str, str]]) -> list[dict]:

@@ -12,7 +12,7 @@ from apps.discovery.models import RouterDevice, ScanRun
 from apps.discovery.scanner import collect_observations, router_sources
 from apps.discovery.services import apply_observations, due_segments, is_scan_allowed
 from apps.registry.models import Segment
-from collector.mikrotik import fetch_router_data, normalized_addresses
+from collector.mikrotik import fetch_router_data, normalized_addresses, normalized_neighbors
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ def refresh_router_inventory() -> int:
             defaults={
                 "name": data.identity or host,
                 "addresses": normalized_addresses(data.addresses),
+                "neighbors": normalized_neighbors(data.neighbors),
                 "last_seen_at": timezone.now(),
             },
         )

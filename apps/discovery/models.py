@@ -45,11 +45,12 @@ class ScanRun(models.Model):
 
 
 class RouterDevice(models.Model):
-    """Инвентарь роутеров (SDD §5.10): имя и адреса интерфейсов — рёбра карты сети."""
+    """Инвентарь роутеров (SDD §5.10): имя, адреса интерфейсов и соседи — рёбра карты сети."""
 
     host = models.CharField("IP", max_length=45, unique=True)
     name = models.CharField("имя", max_length=120, blank=True, default="")
     addresses = models.JSONField("адреса интерфейсов", default=list, blank=True)
+    neighbors = models.JSONField("соседи (MNDP/LLDP)", default=list, blank=True)
     last_seen_at = models.DateTimeField("последнее обнаружение")
 
     class Meta:

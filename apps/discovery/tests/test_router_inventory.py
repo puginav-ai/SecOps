@@ -6,9 +6,32 @@ import pytest
 
 from apps.discovery import tasks
 from apps.discovery.models import RouterDevice
-from collector.mikrotik import RouterData, normalized_addresses
+from collector.mikrotik import RouterData, normalized_addresses, normalized_neighbors
 
 pytestmark = pytest.mark.django_db
+
+
+def test_normalized_neighbors_keep_address_identity_and_interface():
+    rows = [
+        {
+            "address": "192.168.253.1",
+            "identity": "MT-Pol",
+            "interface": "sfp1",
+            "platform": "MikroTik",
+            "mac-address": "AA:BB:CC:00:00:02",
+        },
+        {"address": "", "identity": "", "interface": "ether2"},
+    ]
+
+    assert normalized_neighbors(rows) == [
+        {
+            "address": "192.168.253.1",
+            "identity": "MT-Pol",
+            "interface": "sfp1",
+            "platform": "MikroTik",
+            "mac": "aa:bb:cc:00:00:02",
+        }
+    ]
 
 
 @pytest.fixture
@@ -41,6 +64,7 @@ def test_refresh_inventory_upserts_router(monkeypatch, router_settings) -> None:
         lambda *args, **kwargs: RouterData(
             identity="MT-Root",
             addresses=({"address": "10.0.2.1/24", "interface": "bridge"},),
+            neighbors=({"address": "10.0.0.2", "identity": "MT-Pol", "interface": "sfp1"},),
         ),
     )
 
@@ -50,6 +74,15 @@ def test_refresh_inventory_upserts_router(monkeypatch, router_settings) -> None:
     assert router.name == "MT-Root"
     assert router.addresses == [
         {"address": "10.0.2.1/24", "interface": "bridge", "network": "10.0.2.0/24"}
+    ]
+    assert router.neighbors == [
+        {
+            "address": "10.0.0.2",
+            "identity": "MT-Pol",
+            "interface": "sfp1",
+            "platform": "",
+            "mac": "",
+        }
     ]
 
 

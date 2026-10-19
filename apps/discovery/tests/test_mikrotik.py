@@ -95,6 +95,18 @@ def test_fetch_router_data_reads_arp_and_bound_leases(monkeypatch: pytest.Monkey
                 return iter([{"name": "MT-Root"}])
             if parts == ("ip", "address"):
                 return iter([{"address": "10.0.0.1/24", "interface": "bridge"}])
+            if parts == ("ip", "neighbor"):
+                return iter(
+                    [
+                        {
+                            "address": "192.168.253.1",
+                            "identity": "MT-Pol",
+                            "interface": "sfp1",
+                            "platform": "MikroTik",
+                            "mac-address": "AA:BB:CC:00:00:02",
+                        }
+                    ]
+                )
             return iter(())
 
         def close(self) -> None:
@@ -115,6 +127,7 @@ def test_fetch_router_data_reads_arp_and_bound_leases(monkeypatch: pytest.Monkey
         ("ip", "dhcp-server", "lease"),
         ("system", "identity"),
         ("ip", "address"),
+        ("ip", "neighbor"),
     ]
     assert calls["closed"] is True
     assert data.arp == ({"address": "10.0.0.1", "mac-address": "AA:BB:CC:00:00:01"},)
@@ -124,6 +137,7 @@ def test_fetch_router_data_reads_arp_and_bound_leases(monkeypatch: pytest.Monkey
     )
     assert data.identity == "MT-Root"
     assert data.addresses == ({"address": "10.0.0.1/24", "interface": "bridge"},)
+    assert data.neighbors[0]["identity"] == "MT-Pol"
 
 
 def test_fetch_router_data_uses_api_ssl_port(monkeypatch: pytest.MonkeyPatch) -> None:
