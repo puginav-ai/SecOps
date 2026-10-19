@@ -15,6 +15,34 @@ from apps.registry.models import Asset, Segment, Site
 
 MISS_THRESHOLD = 3  # синхронно с discovery.services (импорт сервиса создал бы цикл приложений)
 
+# Легенда карты: иконка (Bootstrap Icons) и цвет роли — те же, что у узлов графа.
+ROLE_LEGEND: dict[str, tuple[str, str]] = {
+    "server": ("bi-server", "#0b7285"),
+    "workstation": ("bi-display", "#4dabf7"),
+    "printer": ("bi-printer", "#e8590c"),
+    "network": ("bi-hdd-network", "#495057"),
+    "medical": ("bi-heart-pulse", "#c92a2a"),
+    "phone": ("bi-telephone", "#12b886"),
+    "camera": ("bi-camera-video", "#7048e8"),
+    "other": ("bi-three-dots", "#adb5bd"),
+    "unknown": ("bi-question-circle", "#adb5bd"),
+}
+
+
+def legend_roles(assets) -> list[dict]:
+    """Элементы легенды: только типы, реально присутствующие в выборке (порядок — как в choices)."""
+    present = {effective_role(asset) for asset in assets}
+    return [
+        {
+            "code": value,
+            "title": title,
+            "icon": ROLE_LEGEND[value][0],
+            "color": ROLE_LEGEND[value][1],
+        }
+        for value, title in Asset.DeviceRole.choices
+        if value in present and value in ROLE_LEGEND
+    ]
+
 
 def effective_role(asset: Asset) -> str:
     """Роль для показа: ручная сильнее авто; если обе пусты — «unknown»."""
@@ -56,6 +84,41 @@ def router_segment_links(
                     continue
                 seen.add(key)
                 links.append((router, segment, str(item.get("interface", ""))))
+    return links
+
+
+def router_router_links(
+    routers: list[RouterDevice] | None = None,
+) -> list[tuple[RouterDevice, RouterDevice, str]]:
+    """Рёбра «роутер—роутер» по соседям (MNDP/LLDP/CDP): сосед опознаётся по адресу или имени.
+
+    Источник — `/ip/neighbor` каждого роутера; связь рисуется, только если сосед — тоже
+    наш роутер из инвентаря. Метка ребра — локальный интерфейс, через который виден сосед.
+    """
+    routers = list(routers if routers is not None else RouterDevice.objects.all())
+    index: dict[str, RouterDevice] = {}
+    for router in routers:
+        index.setdefault(router.host.lower(), router)
+        if router.name:
+            index.setdefault(router.name.lower(), router)
+        for item in router.addresses or []:
+            index.setdefault(str(item.get("address", "")).split("/")[0].lower(), router)
+    links: list[tuple[RouterDevice, RouterDevice, str]] = []
+    seen: set[tuple[int, int]] = set()
+    for router in routers:
+        for neighbor in router.neighbors or []:
+            candidates = (
+                str(neighbor.get("address", "")).split("/")[0].lower(),
+                str(neighbor.get("identity", "")).lower(),
+            )
+            other = next((index[key] for key in candidates if key and key in index), None)
+            if other is None or other.pk == router.pk:
+                continue
+            pair = tuple(sorted((router.pk, other.pk)))
+            if pair in seen:
+                continue
+            seen.add(pair)
+            links.append((router, other, str(neighbor.get("interface", ""))))
     return links
 
 
@@ -108,7 +171,8 @@ def overview_graph(site_id: int | None = None) -> dict:
             data["parent"] = f"site:{segment.site_id}"
         nodes.append({"data": data})
 
-    for router in RouterDevice.objects.all():
+    routers = list(RouterDevice.objects.all())
+    for router in routers:
         nodes.append(
             {
                 "data": {
@@ -128,6 +192,18 @@ def overview_graph(site_id: int | None = None) -> dict:
                     "source": f"router:{router.pk}",
                     "target": f"segment:{segment.pk}",
                     "label": interface,
+                }
+            }
+        )
+    for left, right, interface in router_router_links(routers):
+        edges.append(
+            {
+                "data": {
+                    "id": f"rr:{left.pk}:{right.pk}",
+                    "source": f"router:{left.pk}",
+                    "target": f"router:{right.pk}",
+                    "label": interface,
+                    "type": "router-link",
                 }
             }
         )

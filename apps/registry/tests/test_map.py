@@ -134,6 +134,61 @@ def test_segment_xlsx_requires_segment(login, make_user) -> None:
     assert client.get("/registry/map/assets.xlsx").status_code == 404
 
 
+def test_overview_graph_links_routers_by_neighbors(site: Site, segment: Segment) -> None:
+    first = RouterDevice.objects.create(
+        host="10.0.0.1",
+        name="MT-Root",
+        addresses=[{"address": "10.70.1.1/24", "interface": "bridge", "network": "10.70.1.0/24"}],
+        neighbors=[
+            {
+                "address": "10.0.0.2",
+                "identity": "MT-Pol",
+                "interface": "sfp1",
+                "platform": "MikroTik",
+                "mac": "",
+            }
+        ],
+        last_seen_at=timezone.now(),
+    )
+    second = RouterDevice.objects.create(
+        host="10.0.0.2", name="MT-Pol", last_seen_at=timezone.now()
+    )
+
+    graph = mapdata.overview_graph()
+
+    router_edges = [edge for edge in graph["edges"] if edge["data"].get("type") == "router-link"]
+    assert router_edges, "связь роутер—роутер по соседям не построена"
+    assert {
+        router_edges[0]["data"]["source"],
+        router_edges[0]["data"]["target"],
+    } == {f"router:{first.pk}", f"router:{second.pk}"}
+    assert router_edges[0]["data"]["label"] == "sfp1"
+
+
+def test_legend_shows_only_present_roles(login, make_user, segment: Segment) -> None:
+    make_asset(segment, "10.70.1.40", role_auto="printer")
+    make_asset(segment, "10.70.1.41", role_auto="server")
+    client = login(make_user("map-legend", role="ib_officer"))
+
+    response = client.get(f"/registry/map/?segment={segment.pk}")
+
+    codes = [item["code"] for item in response.context["legend_roles"]]
+    assert codes == ["server", "printer"]  # порядок — как в DeviceRole.choices
+    assert response.context["legend_quiet"] is False
+
+
+def test_legend_unknown_and_quiet_for_ping_segment(login, make_user, segment: Segment) -> None:
+    make_asset(segment, "10.70.1.50")  # ping-профиль: ролей и портов нет
+    quiet = make_asset(segment, "10.70.1.51")
+    Asset.objects.filter(pk=quiet.pk).update(miss_count=3)
+    client = login(make_user("map-legend-ping", role="ib_officer"))
+
+    response = client.get(f"/registry/map/?segment={segment.pk}")
+
+    assert [item["code"] for item in response.context["legend_roles"]] == ["unknown"]
+    assert response.context["legend_quiet"] is True
+
+
 def test_scan_now_enqueues_manual_scan(login, make_user, segment: Segment, monkeypatch) -> None:
     calls: dict = {}
     monkeypatch.setattr(scan_segment, "apply_async", lambda **kwargs: calls.update(kwargs))

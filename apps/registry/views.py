@@ -319,7 +319,12 @@ def network_map(request):
     }
 
     if segment is None:
-        context["graph"] = mapdata.overview_graph(site_id)
+        graph = mapdata.overview_graph(site_id)
+        context["graph"] = graph
+        context["graph_types"] = {node["data"]["type"] for node in graph["nodes"]}
+        context["graph_edge_types"] = {
+            edge["data"].get("type", "plain") for edge in graph["edges"]
+        }
         context["routers_total"] = RouterDevice.objects.count()
         return render(request, "registry/map.html", context)
 
@@ -327,9 +332,16 @@ def network_map(request):
     sort = context["filters"]["sort"] if context["filters"]["sort"] in ASSET_SORTS else "ip"
     ordered = assets.order_by(*ASSET_SORTS[sort])
     graph_assets = list(ordered[:GRAPH_NODE_LIMIT])
+    graph = mapdata.segment_graph(segment, graph_assets)
     context.update(
         {
-            "graph": mapdata.segment_graph(segment, graph_assets),
+            "graph": graph,
+            "graph_types": {node["data"]["type"] for node in graph["nodes"]},
+            "graph_edge_types": {
+                edge["data"].get("type", "plain") for edge in graph["edges"]
+            },
+            "legend_roles": mapdata.legend_roles(graph_assets),
+            "legend_quiet": any(asset.miss_count >= MISS_THRESHOLD for asset in graph_assets),
             "graph_total": assets.count(),
             "graph_shown": len(graph_assets),
             "assets": list(ordered[:TABLE_ROW_LIMIT]),
