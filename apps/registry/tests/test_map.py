@@ -76,6 +76,61 @@ def test_overview_places_router_inside_its_site(
     assert "1 сегмент" in site_data["label"]
 
 
+def test_overview_tiles_shrink_for_empty_segments(site: Site, segment: Segment) -> None:
+    empty = Segment.objects.create(site=site, name="Пустой-линк", cidr="10.70.9.0/30")
+    populated = Segment.objects.create(site=site, name="Наполненный", cidr="10.70.10.0/24")
+    make_asset(populated, "10.70.10.5")
+
+    sized = {node["data"]["id"]: node for node in mapdata.overview_graph(sized=True)["nodes"]}
+    assert (
+        sized[f"segment:{empty.pk}"]["data"]["tile_w"]
+        < sized[f"segment:{populated.pk}"]["data"]["tile_w"]
+    )
+    assert "empty" in sized[f"segment:{empty.pk}"].get("classes", "")
+    assert "\n" in sized[f"segment:{populated.pk}"]["data"]["label"]  # имя + CIDR
+
+    same = {node["data"]["id"]: node for node in mapdata.overview_graph(sized=False)["nodes"]}
+    assert (
+        same[f"segment:{empty.pk}"]["data"]["tile_w"]
+        == same[f"segment:{populated.pk}"]["data"]["tile_w"]
+    )
+    assert "empty" not in same[f"segment:{empty.pk}"].get("classes", "")
+
+
+def test_search_map_accepts_separator_variants(segment: Segment) -> None:
+    make_asset(segment, "10.70.1.191", hostname="pc-191")
+
+    for query in ("10.70.1.191", "10,70,1,191", "10 70 1 191", " 10.70.1.191 "):
+        found = mapdata.search_map(query)
+        assert found["segment_ids"] == [segment.pk], query
+        assert [asset.ip for asset in found["assets"]] == ["10.70.1.191"]
+
+
+def test_search_map_unknown_ip_falls_back_to_known_subnet(segment: Segment) -> None:
+    found = mapdata.search_map("10.70.1.250")
+
+    assert found["assets"] == []
+    assert found["segment_ids"] == [segment.pk]  # актив ещё не найден, но подсеть известна
+
+
+def test_search_map_by_segment_name(segment: Segment) -> None:
+    found = mapdata.search_map("Сегмент-Карт")
+
+    assert segment.pk in found["segment_ids"]
+
+
+def test_map_view_highlights_found_segment(login, make_user, segment: Segment) -> None:
+    make_asset(segment, "10.70.1.191", hostname="pc-191")
+    client = login(make_user("map-search", role="ib_officer"))
+
+    response = client.get("/registry/map/?find=10,70,1,191")
+
+    assert response.context["found_segment_ids"] == [segment.pk]
+    graph_nodes = {node["data"]["id"]: node for node in response.context["graph"]["nodes"]}
+    assert graph_nodes[f"segment:{segment.pk}"]["data"]["found"] is True
+    assert "found" in graph_nodes[f"segment:{segment.pk}"].get("classes", "")
+
+
 def test_segment_graph_links_assets_to_systems(segment: Segment) -> None:
     system = System.objects.create(name="ЛИС-Карта", site=segment.site)
     linked = make_asset(

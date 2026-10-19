@@ -225,16 +225,53 @@
   </div></div>
 {% else %}
   <div class="card shadow-sm mb-3">
-    <div class="card-header bg-white py-2 d-flex align-items-center flex-wrap gap-2">
-      <span class="fw-semibold">Топология сети</span>
-      <span class="text-secondary small">
-        площадки → роутеры → сегменты · роутеров {{ routers_total }}, сегментов {{ segments|length }}
-      </span>
-      <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Масштаб карты">
-        <button type="button" class="btn btn-outline-secondary" data-map-zoom="out" title="Уменьшить">−</button>
-        <button type="button" class="btn btn-outline-secondary" data-map-zoom="in" title="Увеличить">+</button>
-        <button type="button" class="btn btn-outline-secondary" data-map-zoom="fit" title="Вписать в окно">Вписать</button>
+    <div class="card-header bg-white py-2">
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <span class="fw-semibold">Топология сети</span>
+        <span class="text-secondary small">
+          площадки → роутеры → сегменты · роутеров {{ routers_total }}, сегментов {{ segments|length }}
+        </span>
+        <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Масштаб карты">
+          <button type="button" class="btn btn-outline-secondary" data-map-zoom="out" title="Уменьшить" aria-label="Уменьшить">−</button>
+          <button type="button" class="btn btn-outline-secondary" data-map-zoom="in" title="Увеличить" aria-label="Увеличить">+</button>
+          <button type="button" class="btn btn-outline-secondary" data-map-zoom="fit" title="Вписать в окно" aria-label="Вписать в окно">Вписать</button>
+        </div>
       </div>
+      <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
+        <form method="get" class="d-flex gap-2" role="search">
+          {% if site_id %}<input type="hidden" name="site" value="{{ site_id }}">{% endif %}
+          {% if size_mode == "same" %}<input type="hidden" name="size" value="same">{% endif %}
+          <input class="form-control form-control-sm" style="width: 240px" type="search" name="find"
+                 value="{{ find_query }}" aria-label="Поиск актива или сегмента"
+                 placeholder="IP или имя: 192,168,0,191">
+          <button class="btn btn-primary btn-sm" type="submit">Найти</button>
+          {% if find_query %}
+            <a class="btn btn-outline-secondary btn-sm" href="{{ reset_find_url }}">Сбросить</a>
+          {% endif %}
+        </form>
+        <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Размер плиток сегментов">
+          <a class="btn btn-outline-secondary {% if size_mode == 'count' %}active{% endif %}"
+             href="{{ size_urls.count }}">По наполненности</a>
+          <a class="btn btn-outline-secondary {% if size_mode == 'same' %}active{% endif %}"
+             href="{{ size_urls.same }}">Одинаковые</a>
+        </div>
+      </div>
+      {% if found %}
+        <div class="small mt-2" role="status">
+          {% if found.assets %}
+            Найдено: {% for a in found.assets|slice:":3" %}<span class="fw-semibold">{{ a.ip }}</span>{% if a.hostname %} · {{ a.hostname }}{% endif %} → <a href="?segment={{ a.segment_id }}">{{ a.segment }}</a>{% if not forloop.last %}; {% endif %}{% endfor %}
+            {% if found.assets|length > 3 %} и ещё {{ found.assets|length|add:"-3" }}{% endif %}
+          {% elif found.segments %}
+            Подсеть найдена, активы ещё не обнаружены: {% for s in found.segments %}<span class="fw-semibold">{{ s.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
+          {% else %}
+            По запросу «{{ found.query }}» ничего не найдено — проверьте IP или имя.
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="small text-secondary mt-2">
+          Поиск: IP в любом написании (192.168.0.191, 192,168,0,191), имя актива или имя сегмента.
+        </div>
+      {% endif %}
     </div>
     <div class="card-body p-0">
       <div id="map" style="height: 68vh; min-height: 500px;"
@@ -262,7 +299,7 @@
     {% for s in segments %}
       <div class="col">
         <a class="text-decoration-none" href="?segment={{ s.pk }}">
-          <div class="card shadow-sm h-100"><div class="card-body py-2">
+          <div class="card shadow-sm h-100 {% if s.pk in found_segment_ids %}border border-2 border-warning{% endif %}"><div class="card-body py-2">
             <div class="fw-semibold">{{ s.name }}</div>
             <div class="text-secondary small">
               {{ s.site }} · <code>{{ s.cidr }}</code>
@@ -349,8 +386,17 @@
       }},
       { selector: 'node[type="segment"]', style: {
           "background-color": "#0b5ed7", "shape": "round-rectangle",
-          "width": 200, "height": 48, "color": "#ffffff", "font-size": 12,
-          "text-valign": "center", "text-wrap": "wrap", "text-max-width": "188px"
+          "width": "data(tile_w)", "height": "data(tile_h)",
+          "color": "#ffffff", "font-size": "data(font_size)",
+          "text-valign": "center", "text-wrap": "wrap", "text-max-width": "88%"
+      }},
+      { selector: 'node[type="segment"].empty', style: {
+          "background-color": "#e9ecef", "color": "#495057",
+          "border-width": 1, "border-color": "#ced4da"
+      }},
+      { selector: 'node.found', style: {
+          "border-width": 3, "border-color": "#f59f00",
+          "overlay-color": "#f59f00", "overlay-opacity": 0.14, "overlay-padding": 10
       }},
       { selector: 'node[type="segment-root"]', style: {
           "background-color": "#f8fbff", "border-color": "#c9dcff", "border-width": 1,
@@ -394,6 +440,12 @@
     layoutOverview();
   }
   cy.layout({ name: "preset", fit: true, padding: 24 }).run();
+  // Найденный поиском сегмент — в центр и с разумным приближением
+  const foundNodes = cy.nodes(".found");
+  if (foundNodes.length) {
+    cy.fit(foundNodes, 140);
+    if (cy.zoom() > cy.maxZoom()) { cy.zoom(cy.maxZoom()); }
+  }
   refreshLabels();
   cy.on("zoom", refreshLabels);
 
@@ -443,44 +495,55 @@
   }
 
   function layoutOverview() {
-    const SEG_W = 210;
-    const SEG_H = 54;
     const ROUTER_W = 156;
     const ROUTER_H = 66;
     const PAD = 24;
     const SITE_GAP = 36;
+    const GAP_X = 10;
+    const GAP_Y = 10;
     const byLabel = function (a, b) {
       return a.data("label") < b.data("label") ? -1 : 1;
     };
-    // Колонки сегментов — по ширине контейнера, чтобы площадка не уезжала за экран
-    const cols = Math.max(1, Math.min(6, Math.floor((cy.width() - 3 * PAD) / SEG_W)));
+    // Плитки разной ширины (по наполненности) — раскладываем «потоком» с переносом;
+    // наполненные сегменты первыми, пустые чипы уходят в конец
+    const rowWidth = Math.max(cy.width() - 2 * PAD - 40, 480);
     let top = 0;
     cy.nodes('[type="site"]').forEach(function (site) {
       const routers = site.children('[type="router"]').sort(byLabel);
-      const segments = site.children('[type="segment"]').sort(byLabel);
+      const segments = site.children('[type="segment"]').sort(function (a, b) {
+        const diff = (b.data("asset_total") || 0) - (a.data("asset_total") || 0);
+        return diff !== 0 ? diff : byLabel(a, b);
+      });
       routers.forEach(function (node, index) {
         node.position({ x: PAD + index * ROUTER_W, y: top + PAD + 8 });
       });
       // Роутеры — отдельным рядом над сегментами: связи остаются короткими и не пересекают
       // всю схему (иначе обзор превращается в «паутину»)
       const segmentsTop = top + PAD + (routers.length ? ROUTER_H : 4);
-      segments.forEach(function (node, index) {
-        node.position({
-          x: PAD + (index % cols) * SEG_W,
-          y: segmentsTop + Math.floor(index / cols) * SEG_H,
-        });
+      let x = PAD;
+      let y = segmentsTop;
+      let rowH = 0;
+      segments.forEach(function (node) {
+        const w = node.data("tile_w") || 200;
+        const h = node.data("tile_h") || 48;
+        if (x > PAD && x + w > PAD + rowWidth) {
+          x = PAD;
+          y += rowH + GAP_Y;
+          rowH = 0;
+        }
+        node.position({ x: x + w / 2, y: y + h / 2 });
+        x += w + GAP_X;
+        rowH = Math.max(rowH, h);
       });
-      const rows = Math.max(1, Math.ceil(segments.length / cols));
-      top = segmentsTop + rows * SEG_H + PAD + SITE_GAP;
+      top = y + Math.max(rowH, 1) + PAD + SITE_GAP;
     });
     // Узлы без площадки — отдельным блоком снизу (в норме таких нет)
     cy.nodes('[type="segment"], [type="router"]')
       .filter(function (node) { return !node.parent().length; })
       .forEach(function (node, index) {
-        node.position({
-          x: PAD + (index % cols) * SEG_W,
-          y: top + PAD + Math.floor(index / cols) * SEG_H,
-        });
+        const w = node.data("tile_w") || 200;
+        const h = node.data("tile_h") || 48;
+        node.position({ x: PAD + index * (w + GAP_X) + w / 2, y: top + PAD + h / 2 });
       });
   }
 
@@ -496,12 +559,15 @@
   document.body.appendChild(tip);
   let tipTimer = null;
   let tipSeen = false;
-  cy.on("mouseover", 'node[type="asset"]', function (event) {
-    const data = event.target.data();
+  function tipText(data) {
+    if (data.type === "segment") return data.summary || data.label;
     const parts = [data.label];
     if (data.ip && data.label !== data.ip) parts.push(data.ip);
     if (data.role && data.role !== "unknown") parts.push(roleTitles[data.role] || data.role);
-    const text = parts.join(" · ");
+    return parts.join(" · ");
+  }
+  cy.on("mouseover", 'node[type="asset"], node[type="segment"]', function (event) {
+    const text = tipText(event.target.data());
     clearTimeout(tipTimer);
     const show = function () {
       tip.textContent = text;
@@ -511,14 +577,14 @@
     // Первая подсказка — с задержкой, дальше мгновенно: иначе они «мигают» при движении по сетке
     if (tipSeen) { show(); } else { tipTimer = setTimeout(show, 350); }
   });
-  cy.on("mousemove", 'node[type="asset"]', function (event) {
+  cy.on("mousemove", 'node[type="asset"], node[type="segment"]', function (event) {
     const original = event.originalEvent;
     if (original) {
       tip.style.left = original.clientX + 14 + "px";
       tip.style.top = original.clientY + 14 + "px";
     }
   });
-  cy.on("mouseout", 'node[type="asset"]', function () {
+  cy.on("mouseout", 'node[type="asset"], node[type="segment"]', function () {
     clearTimeout(tipTimer);
     tip.classList.add("d-none");
   });

@@ -256,6 +256,26 @@ def _base_query(request) -> str:
     return params.urlencode()
 
 
+def _overview_size_urls(request, current: str) -> dict[str, str]:
+    """Ссылки переключателя «размер плиток сегментов» с сохранением site/find."""
+    urls = {}
+    for mode in ("count", "same"):
+        params = request.GET.copy()
+        if mode == "count":
+            params.pop("size", None)  # значение по умолчанию — без параметра
+        else:
+            params["size"] = mode
+        urls[mode] = "?" + params.urlencode() if params else "?"
+    return urls
+
+
+def _overview_reset_url(request) -> str:
+    """Ссылка «сбросить поиск»: убирает find, сохраняет site/size."""
+    params = request.GET.copy()
+    params.pop("find", None)
+    return "?" + params.urlencode() if params else "?"
+
+
 def _map_assets(segment: Segment, params):
     """Активы сегмента с фильтрами карты: роль, вендор, порт, продукт, ИС, статус, поиск."""
     assets = mapdata.asset_queryset().filter(segment=segment)
@@ -319,11 +339,24 @@ def network_map(request):
     }
 
     if segment is None:
-        graph = mapdata.overview_graph(site_id)
+        find_query = (request.GET.get("find") or "").strip()
+        size_mode = "same" if request.GET.get("size") == "same" else "count"
+        found = mapdata.search_map(find_query) if find_query else None
+        graph = mapdata.overview_graph(
+            site_id,
+            sized=size_mode == "count",
+            found_segment_ids=tuple(found["segment_ids"]) if found else (),
+        )
         context["graph"] = graph
         context["graph_types"] = {node["data"]["type"] for node in graph["nodes"]}
         context["graph_edge_types"] = {edge["data"].get("type", "plain") for edge in graph["edges"]}
         context["routers_total"] = RouterDevice.objects.count()
+        context["find_query"] = find_query
+        context["found"] = found
+        context["found_segment_ids"] = found["segment_ids"] if found else []
+        context["size_mode"] = size_mode
+        context["size_urls"] = _overview_size_urls(request, size_mode)
+        context["reset_find_url"] = _overview_reset_url(request)
         return render(request, "registry/map.html", context)
 
     assets = _map_assets(segment, request.GET)

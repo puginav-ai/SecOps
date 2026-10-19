@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
@@ -14,6 +15,27 @@ from apps.discovery.models import RouterDevice
 from apps.registry.models import Asset, Segment, Site
 
 MISS_THRESHOLD = 3  # синхронно с discovery.services (импорт сервиса создал бы цикл приложений)
+
+# Плитки сегментов на обзоре: (порог «от», ширина, высота, шрифт, без CIDR).
+# Пустые и служебные сегменты — мелкие серые чипы, наполненные — крупнее (SDD §5.10).
+SEGMENT_TILE_BUCKETS: tuple[tuple[int, int, int, int, bool], ...] = (
+    (0, 132, 40, 10, True),
+    (1, 168, 42, 11, False),
+    (10, 208, 48, 12, False),
+    (50, 248, 56, 12, False),
+)
+UNIFORM_TILE = (200, 48, 12)
+
+
+def segment_tile(asset_total: int, sized: bool) -> tuple[int, int, int, bool]:
+    """Размер плитки сегмента: (ширина, высота, шрифт, компактная подпись без CIDR)."""
+    if not sized:
+        return (*UNIFORM_TILE, False)
+    for threshold, width, height, font_size, compact in reversed(SEGMENT_TILE_BUCKETS):
+        if asset_total >= threshold:
+            return width, height, font_size, compact
+    return 132, 40, 10, True
+
 
 # Легенда карты: иконка (Bootstrap Icons) и цвет роли — те же, что у узлов графа.
 ROLE_LEGEND: dict[str, tuple[str, str]] = {
@@ -131,9 +153,16 @@ def _plural(count: int, one: str, few: str, many: str) -> str:
     return many
 
 
-def overview_graph(site_id: int | None = None) -> dict:
+def overview_graph(
+    site_id: int | None = None,
+    *,
+    sized: bool = True,
+    found_segment_ids: tuple[int, ...] = (),
+) -> dict:
     """Граф обзора: площадки (контейнеры), внутри — роутеры и сегменты, плюс связи.
 
+    sized — размер плитки сегмента пропорционально числу активов (пустые — мелкие чипы);
+    found_segment_ids — сегменты, попавшие в поиск: подсвечиваются и получают флаг `found`.
     Роутер попадает в ту площадку, где у него больше всего сегментов: иначе общий ряд
     роутеров растягивал веер рёбер через всю схему и обзор терял читаемость (SDD §5.10).
     """
@@ -187,20 +216,37 @@ def overview_graph(site_id: int | None = None) -> dict:
         )
 
     for segment in visible_segments:
+        total = segment.asset_total or 0
+        tile_w, tile_h, font_size, compact = segment_tile(total, sized)
+        plural_assets = _plural(total, "актив", "актива", "активов")
         data = {
             "id": f"segment:{segment.pk}",
-            "label": f"{segment.name}\n{segment.cidr}",
+            "label": f"{segment.name}\n{segment.cidr}" if not compact else segment.name,
+            "summary": f"{segment.name} · {segment.cidr} · {total} {plural_assets}",
             "type": "segment",
             "cidr": segment.cidr,
             "vlan": segment.vlan if segment.vlan is not None else "",
-            "asset_total": segment.asset_total,
+            "asset_total": total,
             "asset_active": segment.asset_active,
             "asset_unknown": segment.asset_unknown,
+            "tile_w": tile_w,
+            "tile_h": tile_h,
+            "font_size": font_size,
             "url": f"{reverse('registry:network_map')}?segment={segment.pk}",
         }
+        if segment.pk in found_segment_ids:
+            data["found"] = True
         if segment.site_id:
             data["parent"] = f"site:{segment.site_id}"
-        nodes.append({"data": data})
+        classes = []
+        if sized and total == 0:
+            classes.append("empty")
+        if segment.pk in found_segment_ids:
+            classes.append("found")
+        node: dict = {"data": data}
+        if classes:
+            node["classes"] = " ".join(classes)
+        nodes.append(node)
 
     router_links = router_segment_links(visible_segments)
     votes: dict[int, dict[int, int]] = {}
@@ -325,3 +371,71 @@ def segment_graph(segment: Segment, assets: list[Asset]) -> dict:
                 }
             )
     return {"nodes": nodes, "edges": edges}
+
+
+def normalize_query(query: str) -> str:
+    """«192,168,0,191», «192 168 0 191», «192.168.0.191 » → «192.168.0.191»."""
+    return re.sub(r"[\s,;]+", ".", (query or "").strip()).strip(".")
+
+
+def _overlaps(cidr: str, network: ipaddress._BaseNetwork) -> bool:
+    try:
+        return ipaddress.ip_network(cidr, strict=False).overlaps(network)
+    except ValueError:
+        return False
+
+
+def search_map(query: str) -> dict:
+    """Поиск на карте: IP с любыми разделителями, имя актива или имя сегмента.
+
+    Сегменты с найденными активами подсвечиваются на графе обзора. Если IP ещё не найден
+    как актив, но попадает в известную подсеть — подсвечиваем хотя бы сегмент.
+    """
+    raw = (query or "").strip()
+    normalized = normalize_query(raw)
+    assets: list[Asset] = []
+    segments: list[Segment] = []
+    ip = None
+    network = None
+    if normalized:
+        try:
+            ip = ipaddress.ip_address(normalized)
+        except ValueError:
+            try:
+                network = ipaddress.ip_network(normalized, strict=False)
+            except ValueError:
+                network = None
+
+    if ip is not None:
+        assets = list(Asset.objects.select_related("segment").filter(ip=str(ip))[:20])
+    elif network is not None:
+        segments = [s for s in Segment.objects.all() if _overlaps(s.cidr, network)]
+    elif normalized:
+        like = Q(ip__startswith=normalized) | Q(hostname__icontains=raw)
+        assets = list(Asset.objects.select_related("segment").filter(like).order_by("ip")[:20])
+
+    if assets:
+        ids = {asset.segment_id for asset in assets if asset.segment_id}
+        segments = list(Segment.objects.filter(pk__in=ids).order_by("cidr"))
+    elif ip is not None and not segments:
+        # IP известен, актива ещё нет — подсветим хотя бы подсеть, в которую он попадает
+        for segment in Segment.objects.all():
+            try:
+                if ip in ipaddress.ip_network(segment.cidr, strict=False):
+                    segments.append(segment)
+            except ValueError:
+                continue
+
+    if not assets and not segments and raw:
+        segments = list(
+            Segment.objects.filter(Q(name__icontains=raw) | Q(cidr__icontains=normalized)).order_by(
+                "cidr"
+            )[:20]
+        )
+    return {
+        "query": raw,
+        "normalized": normalized,
+        "assets": assets,
+        "segments": segments,
+        "segment_ids": [segment.pk for segment in segments],
+    }
