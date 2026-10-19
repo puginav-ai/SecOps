@@ -106,6 +106,26 @@ def test_search_map_accepts_separator_variants(segment: Segment) -> None:
         assert [asset.ip for asset in found["assets"]] == ["10.70.1.191"]
 
 
+def test_search_prefers_ip_over_hostname(segment: Segment) -> None:
+    by_ip = make_asset(segment, "10.70.1.191")
+    make_asset(segment, "10.70.1.44", hostname="HP V1910 Switch")
+
+    found = mapdata.search_map("191")
+
+    assert [asset.pk for asset in found["assets"]] == [by_ip.pk]  # сначала *.191, а не «V1910»
+    assert found["match"] == "ip"
+
+    by_name = mapdata.search_map("v1910")
+    assert [asset.hostname for asset in by_name["assets"]] == ["HP V1910 Switch"]
+    assert by_name["match"] == "name"
+
+
+def test_search_matches_ip_fragment_in_middle_octet(segment: Segment) -> None:
+    asset = make_asset(segment, "10.70.1.5")
+
+    assert [found.pk for found in mapdata.search_map("70.1")["assets"]] == [asset.pk]
+
+
 def test_search_map_unknown_ip_falls_back_to_known_subnet(segment: Segment) -> None:
     found = mapdata.search_map("10.70.1.250")
 

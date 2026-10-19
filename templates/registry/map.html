@@ -259,17 +259,17 @@
       {% if found %}
         <div class="small mt-2" role="status">
           {% if found.assets %}
-            Найдено: {% for a in found.assets|slice:":3" %}<span class="fw-semibold">{{ a.ip }}</span>{% if a.hostname %} · {{ a.hostname }}{% endif %} → <a href="?segment={{ a.segment_id }}">{{ a.segment }}</a>{% if not forloop.last %}; {% endif %}{% endfor %}
+            {% if found.match == "name" %}Совпадение по имени, в IP-адресах нет: {% else %}Найдено: {% endif %}{% for a in found.assets|slice:":3" %}<span class="fw-semibold">{{ a.ip }}</span>{% if a.hostname %} · {{ a.hostname }}{% endif %} → <a href="?segment={{ a.segment_id }}">{{ a.segment }}</a>{% if not forloop.last %}; {% endif %}{% endfor %}
             {% if found.assets|length > 3 %} и ещё {{ found.assets|length|add:"-3" }}{% endif %}
           {% elif found.segments %}
-            Подсеть найдена, активы ещё не обнаружены: {% for s in found.segments %}<span class="fw-semibold">{{ s.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
+            {% if found.match == "segment" %}Сегмент по имени: {% else %}Подсеть найдена, активы ещё не обнаружены: {% endif %}{% for s in found.segments %}<span class="fw-semibold">{{ s.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
           {% else %}
             По запросу «{{ found.query }}» ничего не найдено — проверьте IP или имя.
           {% endif %}
         </div>
       {% else %}
         <div class="small text-secondary mt-2">
-          Поиск: IP в любом написании (192.168.0.191, 192,168,0,191), имя актива или имя сегмента.
+          Поиск сначала по IP (192.168.0.191, 192,168,0,191 или фрагмент 191), затем по имени актива или сегмента.
         </div>
       {% endif %}
     </div>

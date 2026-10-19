@@ -395,6 +395,7 @@ def search_map(query: str) -> dict:
     normalized = normalize_query(raw)
     assets: list[Asset] = []
     segments: list[Segment] = []
+    match = ""
     ip = None
     network = None
     if normalized:
@@ -408,11 +409,31 @@ def search_map(query: str) -> dict:
 
     if ip is not None:
         assets = list(Asset.objects.select_related("segment").filter(ip=str(ip))[:20])
+        if assets:
+            match = "ip"
     elif network is not None:
         segments = [s for s in Segment.objects.all() if _overlaps(s.cidr, network)]
+        if segments:
+            match = "subnet"
     elif normalized:
-        like = Q(ip__startswith=normalized) | Q(hostname__icontains=raw)
-        assets = list(Asset.objects.select_related("segment").filter(like).order_by("ip")[:20])
+        # Сначала IP: «191» — это *.191, «168.0» — любой октет с .168.0., «192.168» — префикс.
+        # Имя актива — только если по IP ничего нет, и с пометкой «по имени».
+        ip_like = (
+            Q(ip__startswith=normalized)
+            | Q(ip__endswith=f".{normalized}")
+            | Q(ip__contains=f".{normalized}.")
+        )
+        assets = list(Asset.objects.select_related("segment").filter(ip_like).order_by("ip")[:20])
+        if assets:
+            match = "ip"
+        else:
+            assets = list(
+                Asset.objects.select_related("segment")
+                .filter(hostname__icontains=raw)
+                .order_by("ip")[:20]
+            )
+            if assets:
+                match = "name"
 
     if assets:
         ids = {asset.segment_id for asset in assets if asset.segment_id}
@@ -423,6 +444,7 @@ def search_map(query: str) -> dict:
             try:
                 if ip in ipaddress.ip_network(segment.cidr, strict=False):
                     segments.append(segment)
+                    match = "subnet"
             except ValueError:
                 continue
 
@@ -432,9 +454,12 @@ def search_map(query: str) -> dict:
                 "cidr"
             )[:20]
         )
+        if segments:
+            match = "segment"
     return {
         "query": raw,
         "normalized": normalized,
+        "match": match,
         "assets": assets,
         "segments": segments,
         "segment_ids": [segment.pk for segment in segments],
