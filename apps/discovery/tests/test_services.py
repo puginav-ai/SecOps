@@ -109,10 +109,13 @@ def test_unknown_mac_is_enriched_not_reused(segment: Segment) -> None:
 
 def test_ports_change_event(segment: Segment) -> None:
     services.apply_observations(segment, [host("10.60.1.10", mac=MAC_A, ports=(22,))])
-    services.apply_observations(segment, [host("10.60.1.10", mac=MAC_A, ports=(22, 443))])
+    result = services.apply_observations(
+        segment, [host("10.60.1.10", mac=MAC_A, ports=(22, 443))]
+    )
 
     asset = Asset.objects.get()
     assert asset.ports == [22, 443]
+    assert result.ports_changed == 1  # счётчик в статистике скана
     assert AssetEvent.objects.get(kind=AssetEvent.Kind.PORTS_CHANGED).details == {
         "ports": {"from": [22], "to": [22, 443]}
     }

@@ -10,9 +10,10 @@ from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
 # Бюджет скана — SDD §5.2
-HOST_TIMEOUT = "10s"
-VERSION_HOST_TIMEOUT = "30s"  # -sV дольше: версии служб не влезают в 10 с
-MAX_RATE = "100"  # pps
+HOST_TIMEOUT = "40s"  # с учётом глобального max-rate: на 100+ хостах 10 с не хватало и nmap
+#                       пропускал хосты целиком («Skipping host due to host timeout»)
+VERSION_PORTS_TIMEOUT = "90s"  # вторая ступень (-sV) — по узкому набору открытых портов
+MAX_RATE = "300"  # pps: глобальный лимит на весь запуск, а не на хост
 TOP_PORTS = "100"
 CHUNK_PREFIX = 24
 
@@ -110,21 +111,47 @@ def build_sweep_args(target: str) -> list[str]:
     return ["nmap", "-sn", "-n", "-T3", target]
 
 
-def build_service_args(targets: list[str], *, version: bool = False) -> list[str]:
+def build_service_args(targets: list[str]) -> list[str]:
     """top-100 портов для живых узлов: бюджет host-timeout/max-rate (SDD §5.2), без DNS.
 
     T3, а не T2: у T2 минимальная задержка 0.4 с на пробу, и top-100 не укладывается
-    в host-timeout 10 с (проверено). Темп ограничивает --max-rate 100 pps.
-    `version=True` — профиль «top-100 + версии»: -sV (лёгкая интенсивность) и баннеры
-    HTTP/SSH дают продукт и версию ПО; host-timeout увеличен до 30 с.
+    в host-timeout (проверено). --max-rate — ГЛОБАЛЬНЫЙ лимит: при 100 pps на сегменте
+    из ~120 хостов каждый не успевал и nmap пропускал хосты целиком, поэтому 300 pps
+    и host-timeout 40 с (проверено на живом сегменте: 19 из 19 хостов с портами).
     """
-    args = ["nmap", "-n", "-T3", "--top-ports", TOP_PORTS]
-    if version:
-        args += ["-sV", "--version-light", "--script", "banner,http-title"]
     return [
-        *args,
+        "nmap",
+        "-n",
+        "-T3",
+        "--top-ports",
+        TOP_PORTS,
         "--host-timeout",
-        VERSION_HOST_TIMEOUT if version else HOST_TIMEOUT,
+        HOST_TIMEOUT,
+        "--max-rate",
+        MAX_RATE,
+        *targets,
+    ]
+
+
+def build_version_args(targets: list[str], ports: list[int]) -> list[str]:
+    """Определение версий служб — вторая ступень профиля «top-100 + версии».
+
+    Только по уже найденным открытым портам: -sV по всем 100 портам не укладывается
+    в host-timeout на хостах с «filtered» портами, и nmap пропускал их целиком
+    («Skipping host due to host timeout» — проверено на живом сегменте).
+    """
+    return [
+        "nmap",
+        "-n",
+        "-T3",
+        "-sV",
+        "--version-light",
+        "--script",
+        "banner,http-title",
+        "-p",
+        ",".join(str(port) for port in ports),
+        "--host-timeout",
+        VERSION_PORTS_TIMEOUT,
         "--max-rate",
         MAX_RATE,
         *targets,

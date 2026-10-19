@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from dataclasses import replace
 
 from django.conf import settings
 
@@ -17,6 +18,7 @@ from collector.nmap import (
     ObservedHost,
     build_service_args,
     build_sweep_args,
+    build_version_args,
     chunk_cidr,
     parse_nmap_xml,
 )
@@ -87,18 +89,45 @@ def collect_observations(segment: Segment) -> list[ObservedHost]:
         detailed = {
             host.ip: host
             for host in parse_nmap_xml(
-                run_nmap(
-                    build_service_args(
-                        [host.ip for host in alive],
-                        version=segment.scan_profile == Segment.ScanProfile.TOP100_SERVICES,
-                    )
-                )
+                run_nmap(build_service_args([host.ip for host in alive]))
             )
         }
         # узел, «потерянный» при детальном скане, остаётся живым из свипа
         alive = [detailed.get(host.ip, host) for host in alive]
 
+    if segment.scan_profile == Segment.ScanProfile.TOP100_SERVICES and alive:
+        alive = _with_service_versions(alive)
+
     passive, leases = passive_hosts(segment)
     if passive:
         alive = merge_observations(alive, passive, leases)
     return alive
+
+
+# Версии — батчами: в одном запуске nmap часть хостов пропускает по host-timeout
+VERSION_BATCH_SIZE = 16
+
+
+def _with_service_versions(hosts: list[ObservedHost]) -> list[ObservedHost]:
+    """Вторая ступень профиля с версиями: -sV по объединению открытых портов, батчами.
+
+    Хосты без открытых портов не трогаем: у них и версий не будет. Батчи ограничивают
+    host-timeout на весь запуск: на 100+ хостах nmap иначе пропускает часть хостов
+    («Skipping host due to host timeout»), и версии теряются.
+    """
+    ported = {host.ip: host.ports for host in hosts if host.ports}
+    if not ported:
+        return hosts
+    ordered_ips = sorted(ported)
+    versioned: dict[str, ObservedHost] = {}
+    for start in range(0, len(ordered_ips), VERSION_BATCH_SIZE):
+        batch = ordered_ips[start : start + VERSION_BATCH_SIZE]
+        ports = sorted({port for ip in batch for port in ported[ip]})
+        for host in parse_nmap_xml(run_nmap(build_version_args(batch, ports))):
+            versioned[host.ip] = host
+    return [
+        replace(host, services=versioned[host.ip].services)
+        if versioned.get(host.ip, None) and versioned[host.ip].services
+        else host
+        for host in hosts
+    ]

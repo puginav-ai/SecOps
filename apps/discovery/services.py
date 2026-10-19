@@ -117,7 +117,9 @@ def apply_observations(segment: Segment, observations: Sequence[ObservedHost]) -
 
         seen_ids.add(asset.pk)
         reopened = asset.miss_count >= MISS_THRESHOLD
-        changes = _update_asset(asset, observed, segment, mac, now)
+        changes, ports_changed = _update_asset(asset, observed, segment, mac, now)
+        if ports_changed:
+            result.ports_changed += 1
         if changes:
             AssetEvent.objects.create(asset=asset, kind=AssetEvent.Kind.CHANGED, details=changes)
             result.changed += 1
@@ -144,8 +146,8 @@ def apply_observations(segment: Segment, observations: Sequence[ObservedHost]) -
 
 def _update_asset(
     asset: Asset, observed: ObservedHost, segment: Segment, mac: str | None, now: datetime
-) -> dict:
-    """Обновляет поля актива и возвращает изменения для события changed."""
+) -> tuple[dict, bool]:
+    """Обновляет поля актива; возвращает (изменения для changed, сменились ли порты)."""
     changes: dict = {}
     for field, old, new in (
         ("ip", asset.ip, observed.ip),
@@ -205,7 +207,7 @@ def _update_asset(
     asset.last_seen_at = now
     asset.miss_count = 0
     asset.save()
-    return changes
+    return changes, ports_changed
 
 
 def software_label(observed: ObservedHost) -> str:

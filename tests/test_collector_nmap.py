@@ -7,9 +7,10 @@ from collector.nmap import (
     HOST_TIMEOUT,
     MAX_RATE,
     TOP_PORTS,
-    VERSION_HOST_TIMEOUT,
+    VERSION_PORTS_TIMEOUT,
     build_service_args,
     build_sweep_args,
+    build_version_args,
     chunk_cidr,
     parse_nmap_xml,
 )
@@ -80,11 +81,12 @@ def test_service_args_respect_scan_budget():
     assert args[-2:] == ["10.60.1.10", "10.60.1.11"]
 
 
-def test_version_service_args_add_fingerprinting():
-    args = build_service_args(["10.60.1.10"], version=True)
+def test_version_args_target_only_open_ports():
+    args = build_version_args(["10.60.1.10", "10.60.1.11"], [22, 443])
 
     assert "-sV" in args
     assert "--version-light" in args
     assert "banner,http-title" in args
-    assert VERSION_HOST_TIMEOUT in args
-    assert args[-1] == "10.60.1.10"
+    assert args[args.index("-p") + 1] == "22,443"
+    assert VERSION_PORTS_TIMEOUT in args
+    assert args[-2:] == ["10.60.1.10", "10.60.1.11"]

@@ -74,6 +74,25 @@ def test_top100_profile_enriches_ports_and_os(segment: Segment, monkeypatch) -> 
 
 
 @freeze_time("2026-10-12 09:30:00+03:00")
+def test_services_profile_runs_version_stage_on_open_ports(segment: Segment, monkeypatch) -> None:
+    """Профиль с версиями: быстрый top-100, затем -sV по объединению открытых портов."""
+    segment.scan_profile = Segment.ScanProfile.TOP100_SERVICES
+    segment.save(update_fields=["scan_profile"])
+    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, DETAIL_XML])
+
+    tasks.scan_segment(segment.pk)
+
+    assert len(calls) == 3
+    version_args = calls[2]
+    assert "-sV" in version_args
+    assert version_args[version_args.index("-p") + 1] == "22,443,3389"
+
+    srv = Asset.objects.get(ip="10.60.1.10")
+    assert "nginx" in srv.software and "OpenSSH" in srv.software
+    assert srv.fingerprint["services"][0]["product"] == "OpenSSH"
+
+
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_disabled_segment_is_refused_without_scan(segment: Segment, monkeypatch) -> None:
     segment.scan_enabled = False
     segment.save(update_fields=["scan_enabled"])
