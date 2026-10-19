@@ -50,6 +50,30 @@ def test_hostname_hints_are_weak():
     assert classify_role([22, 443], hostname="ivanov-pc") == "workstation"
 
 
+def test_mobile_devices_by_hostname_and_vendor():
+    assert classify_role([], hostname="iPhone") == "mobile"
+    assert classify_role([], hostname="POCO-X7-Pro") == "mobile"
+    assert classify_role([], hostname="android-16c6e474f931f1c1") == "mobile"
+    assert classify_role([], vendor="Xiaomi Communications Co Ltd") == "mobile"
+    assert classify_role([], vendor="Apple, Inc.") == "mobile"
+    # Huawei по вендору неоднозначен (коммутаторы и телефоны): сеть решает вендор, телефон — имя
+    assert classify_role([], vendor="Huawei Technologies") == "network"
+    assert classify_role([], hostname="HUAWEI P30", vendor="Huawei Technologies") == "mobile"
+    # Samsung с портами печати остаётся принтером
+    assert classify_role([9100], vendor="Samsung Electronics Co.,Ltd") == "printer"
+
+
+def test_access_points_by_model_and_vendor():
+    assert classify_role([], hostname="TL-WR840N") == "ap"
+    assert classify_role([], hostname="Keenetic-9976") == "ap"
+    assert classify_role([], hostname="Archer_C6", vendor="TP-LINK TECHNOLOGIES CO.,LTD.") == "ap"
+    assert classify_role([], hostname="EC220-G5", vendor="TP-LINK TECHNOLOGIES CO.,LTD.") == "ap"
+    assert classify_role([], vendor="Ubiquiti Inc") == "ap"
+    assert classify_role([], vendor="Tenda Technology Co.,Ltd.Dongguan") == "ap"
+    # коммутатор TP-Link по одному вендору остаётся сетевым оборудованием
+    assert classify_role([], vendor="TP-LINK TECHNOLOGIES CO.,LTD.") == "network"
+
+
 def test_unknown_stays_empty():
     assert classify_role([]) == ""
     assert classify_role([], vendor="Неизвестный вендор", hostname="host-1") == ""

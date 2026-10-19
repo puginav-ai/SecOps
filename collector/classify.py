@@ -33,6 +33,38 @@ PRINTER_VENDORS = (
     "lexmark",
 )
 PHONE_VENDORS = ("yealink", "polycom", "grandstream", "avaya", "fanvil", "snom")
+# Точки доступа: в этой сети Wi-Fi держат бытовые роутеры (TL-WR840N, Archer, Keenetic,
+# DIR-300, Tenda, UniFi). Модель в имени хоста — сильный признак; по одному вендору
+# TP-Link/D-Link не отличить AP от коммутатора, поэтому вендор решает только для
+# производителей, у которых AP/роутеры — основной профиль (SDD §5.10).
+AP_HOSTNAME_RE = re.compile(
+    r"(tl-w[rda]\d|archer|^ec\d{3}[-_ ]?g|dir-\d|keenetic|unifi|uap[-_]|aircube|"
+    r"tenda|access[-_ ]point|wifi[-_ ]ap|^f9\d{2})",
+    re.IGNORECASE,
+)
+AP_VENDORS = ("keenetic", "ubiquiti", "tenda")
+# Личные смартфоны/планшеты (SDD §5.10): для реестра это находка «личное устройство
+# в рабочем VLAN», а не техника больницы. Huawei/ZTE сюда не входят: по одному вендору
+# их коммутатор не отличить от телефона — телефон ловится по имени из DHCP.
+MOBILE_HOSTNAME_RE = re.compile(
+    r"^(iphone|ipad|redmi|poco|xiaomi|mi-\d|galaxy|sm-[agsnm]\d|honor|"
+    r"huawei[-_ ]?(p\d|p-?\d|mate|nova)|android-[0-9a-f]{8,}|realme|oppo|vivo|"
+    r"oneplus|pixel|moto[ -]|meizu|tecno|infinix|nothing[ -]phone)",
+    re.IGNORECASE,
+)
+MOBILE_VENDORS = (
+    "xiaomi",
+    "apple",
+    "samsung electronics",
+    "honor",
+    "oppo",
+    "vivo",
+    "oneplus",
+    "realme",
+    "meizu",
+    "motorola",
+    "google llc",
+)
 # Потребительские PC-производители: материнские платы и моноблоки, т.е. рабочие места.
 # Dell/HP/Lenovo/Apple сюда не входят — у них есть и серверы; им нужны порты или имя.
 WORKSTATION_VENDORS = (
@@ -70,6 +102,15 @@ def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") ->
     vendor_l = (vendor or "").lower()
     name_l = (hostname or "").strip().lower()
 
+    # Личное устройство по имени из DHCP — раньше сетевых вендоров: телефон Huawei
+    # по вендору MAC выглядит как сетевое оборудование
+    if MOBILE_HOSTNAME_RE.match(name_l):
+        return "mobile"
+    # Точка доступа по модели в имени — раньше вендоров: TP-Link/D-Link делают и то, и другое
+    if AP_HOSTNAME_RE.search(name_l):
+        return "ap"
+    if any(marker in vendor_l for marker in AP_VENDORS):
+        return "ap"
     if any(marker in vendor_l for marker in NETWORK_VENDORS):
         return "network"
     if port_set & PRINTER_PORTS:
@@ -82,6 +123,8 @@ def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") ->
         return "medical"
     if any(marker in vendor_l for marker in PHONE_VENDORS):
         return "phone"
+    if any(marker in vendor_l for marker in MOBILE_VENDORS):
+        return "mobile"
 
     # AD/БД/почта — сильный признак сервера, проверяем до Windows-портов и веб-морды
     if port_set & SERVER_SIGNAL_PORTS:

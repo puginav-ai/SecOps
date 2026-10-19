@@ -103,6 +103,8 @@ class Asset(models.Model):
         PRINTER = "printer", "печать/МФУ"
         PHONE = "phone", "телефон/IP-телефон"
         CAMERA = "camera", "видеокамера"
+        MOBILE = "mobile", "личное устройство (смартфон/планшет)"
+        AP = "ap", "точка доступа Wi-Fi"
         OTHER = "other", "прочее"
         UNKNOWN = "unknown", "не определена"
 

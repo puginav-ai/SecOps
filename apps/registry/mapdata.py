@@ -46,6 +46,8 @@ ROLE_LEGEND: dict[str, tuple[str, str]] = {
     "medical": ("bi-heart-pulse", "#c92a2a"),
     "phone": ("bi-telephone", "#087f5b"),
     "camera": ("bi-camera-video", "#7048e8"),
+    "mobile": ("bi-phone", "#c2255c"),
+    "ap": ("bi-wifi", "#0c8599"),
     "other": ("bi-three-dots", "#868e96"),
     "unknown": ("bi-question-circle", "#adb5bd"),
 }
