@@ -5,6 +5,7 @@ evidence, обязательства с дедлайнами, КЗИ/ПЗИ, и�
 
 - Спецификация (источник истины): [docs/SDD.md](docs/SDD.md)
 - Процесс и план (TDD, 12 недель): [docs/IMPLEMENTATION-PLAN.md](docs/IMPLEMENTATION-PLAN.md)
+- Регламент (evidence, проверки, RACI, обучение): [docs/REGULATIONS.md](docs/REGULATIONS.md)
 - Правила разработки: [AGENTS.md](AGENTS.md)
 
 ## Быстрый старт
@@ -35,6 +36,8 @@ UI на https://localhost:8443.
 | `make verify` | lint + test + `manage.py check --deploy` — критерий «сделано» |
 | `make migrate` / `make makemigrations` | миграции |
 | `make backup` / `make restore-check` | бэкап и проверка восстановления (см. `ops/`) |
+| `make audit-list` | список адресов для скана (ARP всех роутеров-источников) → `machines.txt` |
+| `make e2e` | браузерный e2e (Playwright/Chromium) по живой консоли; логин — `E2E_USER`/`E2E_PASSWORD` в `.env` |
 
 ## Конвенции
 
