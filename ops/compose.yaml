@@ -104,6 +104,20 @@ services:
     depends_on:
       - web
 
+  # Браузерный e2e (Playwright/Chromium): make e2e. Профиль e2e — в make up не поднимается.
+  e2e:
+    profiles: ["e2e"]
+    build:
+      context: ..
+      dockerfile: ops/e2e.Dockerfile
+    image: secops-e2e:latest
+    env_file: ../.env
+    environment:
+      TZ: Asia/Yekaterinburg
+      E2E_BASE_URL: https://nginx
+    entrypoint: []
+    command: python ops/e2e/browser_smoke.py
+
 volumes:
   pgdata:
   redisdata:

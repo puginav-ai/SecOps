@@ -3,7 +3,7 @@ COMPOSE := docker compose --env-file .env -f ops/compose.yaml
 RUN := $(COMPOSE) run --rm
 MOUNT := -v $(CURDIR):/app
 
-.PHONY: help up down build logs test lint fix verify check-deploy migrate makemigrations superuser shell backup restore-check scan-up audit-list
+.PHONY: help up down build logs test lint fix verify check-deploy migrate makemigrations superuser shell backup restore-check scan-up audit-list e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:' Makefile | cut -d: -f1 | sort
@@ -16,6 +16,12 @@ scan-up:
 
 audit-list:
 	$(RUN) $(MOUNT) web python ops/audit/export_machines.py
+
+# Браузерный e2e по живой консоли (Playwright): сборка e2e-образа + прогон в сети compose.
+# Требует поднятого стека (make up) и E2E_USER/E2E_PASSWORD в .env.
+e2e:
+	$(COMPOSE) build web e2e
+	$(COMPOSE) run --rm --no-deps e2e
 
 down:
 	$(COMPOSE) down
