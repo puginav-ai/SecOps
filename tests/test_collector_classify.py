@@ -29,17 +29,25 @@ def test_phones_and_cameras():
 
 
 def test_servers_and_workstations_by_ports():
-    assert classify_role([22, 80, 443]) == "server"
     assert classify_role([1433]) == "server"
+    assert classify_role([53, 88, 389, 445]) == "server"  # контроллер домена, а не АРМ
     assert classify_role([3389, 445, 135]) == "workstation"
+    # SSH и веб сами по себе — не признак сервера: локальная веб-морда есть у АРМ и медтехники
+    assert classify_role([22, 80, 443]) == ""
+
+
+def test_workstation_vendor_beats_generic_ports_and_softphone():
+    assert classify_role([22, 111, 7070], vendor="ASRock Incorporation") == "workstation"
+    assert classify_role([135, 139, 445, 22, 7070], vendor="PC Aquarius") == "workstation"
+    assert classify_role([5060, 135, 139, 445], vendor="ASUSTek COMPUTER INC.") == "workstation"
 
 
 def test_hostname_hints_are_weak():
     assert classify_role([], hostname="srv-lis") == "server"
     assert classify_role([], hostname="prn-2floor") == "printer"
     assert classify_role([], hostname="ivanov-pc") == "workstation"
-    # порты сильнее имени: сервер с именем АРМ остаётся сервером
-    assert classify_role([22, 443], hostname="ivanov-pc") == "server"
+    # порты сильнее имени, но только сильные: АРМ с SSH не становится сервером
+    assert classify_role([22, 443], hostname="ivanov-pc") == "workstation"
 
 
 def test_unknown_stays_empty():

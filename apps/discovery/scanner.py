@@ -72,14 +72,19 @@ def passive_hosts(segment: Segment) -> tuple[list[ObservedHost], list[Mapping[st
     return hosts, leases
 
 
-def collect_observations(segment: Segment) -> list[ObservedHost]:
-    """Живые узлы сегмента; профиль top100 дополняет их портами/именем/ОС."""
+def collect_observations(segment: Segment, profile: str | None = None) -> list[ObservedHost]:
+    """Живые узлы сегмента; profile — разовый профиль вместо сохранённого в сегменте.
+
+    Ручной скан («Просканировать сейчас») передаёт глубокий профиль: его цель — наполнить
+    паспорта портами и версиями, даже если ежедневный обход сегмента только ping-sweep.
+    """
+    profile = profile or segment.scan_profile
     alive: list[ObservedHost] = []
     for chunk in chunk_cidr(segment.cidr):
         alive.extend(parse_nmap_xml(run_nmap(build_sweep_args(chunk))))
 
     if (
-        segment.scan_profile
+        profile
         in (
             Segment.ScanProfile.TOP100,
             Segment.ScanProfile.TOP100_SERVICES,
@@ -88,14 +93,12 @@ def collect_observations(segment: Segment) -> list[ObservedHost]:
     ):
         detailed = {
             host.ip: host
-            for host in parse_nmap_xml(
-                run_nmap(build_service_args([host.ip for host in alive]))
-            )
+            for host in parse_nmap_xml(run_nmap(build_service_args([host.ip for host in alive])))
         }
         # узел, «потерянный» при детальном скане, остаётся живым из свипа
         alive = [detailed.get(host.ip, host) for host in alive]
 
-    if segment.scan_profile == Segment.ScanProfile.TOP100_SERVICES and alive:
+    if profile == Segment.ScanProfile.TOP100_SERVICES and alive:
         alive = _with_service_versions(alive)
 
     passive, leases = passive_hosts(segment)

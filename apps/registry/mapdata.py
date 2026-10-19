@@ -18,13 +18,13 @@ MISS_THRESHOLD = 3  # синхронно с discovery.services (импорт с�
 # Легенда карты: иконка (Bootstrap Icons) и цвет роли — те же, что у узлов графа.
 ROLE_LEGEND: dict[str, tuple[str, str]] = {
     "server": ("bi-server", "#0b7285"),
-    "workstation": ("bi-display", "#4dabf7"),
+    "workstation": ("bi-display", "#1c7ed6"),
     "printer": ("bi-printer", "#e8590c"),
     "network": ("bi-hdd-network", "#495057"),
     "medical": ("bi-heart-pulse", "#c92a2a"),
-    "phone": ("bi-telephone", "#12b886"),
+    "phone": ("bi-telephone", "#087f5b"),
     "camera": ("bi-camera-video", "#7048e8"),
-    "other": ("bi-three-dots", "#adb5bd"),
+    "other": ("bi-three-dots", "#868e96"),
     "unknown": ("bi-question-circle", "#adb5bd"),
 }
 
@@ -122,40 +122,71 @@ def router_router_links(
     return links
 
 
+def _plural(count: int, one: str, few: str, many: str) -> str:
+    """Русская форма слова для подписи площадки: 1 сегмент / 2 сегмента / 5 сегментов."""
+    if count % 10 == 1 and count % 100 != 11:
+        return one
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        return few
+    return many
+
+
 def overview_graph(site_id: int | None = None) -> dict:
-    """Граф обзора: площадки (контейнеры), сегменты (внутри площадок), роутеры и связи."""
+    """Граф обзора: площадки (контейнеры), внутри — роутеры и сегменты, плюс связи.
+
+    Роутер попадает в ту площадку, где у него больше всего сегментов: иначе общий ряд
+    роутеров растягивал веер рёбер через всю схему и обзор терял читаемость (SDD §5.10).
+    """
     nodes: list[dict] = []
     edges: list[dict] = []
 
-    sites = Site.objects.all()
+    segments = list(
+        Segment.objects.select_related("site").annotate(
+            asset_total=Count("assets", distinct=True),
+            asset_active=Count(
+                "assets", filter=Q(assets__miss_count__lt=MISS_THRESHOLD), distinct=True
+            ),
+            asset_unknown=Count(
+                "assets",
+                filter=Q(assets__owner_person__isnull=True, assets__system_components__isnull=True),
+                distinct=True,
+            ),
+        )
+    )
+    visible_segments = [s for s in segments if site_id is None or s.site_id == site_id]
+
+    site_stats: dict[int, dict[str, int]] = {}
+    for segment in segments:
+        if not segment.site_id:
+            continue
+        stats = site_stats.setdefault(segment.site_id, {"segments": 0, "assets": 0})
+        stats["segments"] += 1
+        stats["assets"] += segment.asset_total or 0
+
+    sites = list(Site.objects.all())
     if site_id is not None:
-        sites = sites.filter(pk=site_id)
+        sites = [site for site in sites if site.pk == site_id]
+    sites.sort(key=lambda site: (-site_stats.get(site.pk, {}).get("segments", 0), site.name))
     for site in sites:
+        stats = site_stats.get(site.pk, {"segments": 0, "assets": 0})
+        segments_count = stats["segments"]
+        assets_count = stats["assets"]
         nodes.append(
             {
                 "data": {
                     "id": f"site:{site.pk}",
-                    "label": site.name,
+                    "label": (
+                        f"{site.name} · {segments_count} "
+                        f"{_plural(segments_count, 'сегмент', 'сегмента', 'сегментов')} · "
+                        f"{assets_count} {_plural(assets_count, 'актив', 'актива', 'активов')}"
+                    ),
                     "type": "site",
                     "url": f"{reverse('registry:network_map')}?site={site.pk}",
                 }
             }
         )
 
-    segments = Segment.objects.select_related("site").annotate(
-        asset_total=Count("assets", distinct=True),
-        asset_active=Count(
-            "assets", filter=Q(assets__miss_count__lt=MISS_THRESHOLD), distinct=True
-        ),
-        asset_unknown=Count(
-            "assets",
-            filter=Q(assets__owner_person__isnull=True, assets__system_components__isnull=True),
-            distinct=True,
-        ),
-    )
-    if site_id is not None:
-        segments = segments.filter(site_id=site_id)
-    for segment in segments:
+    for segment in visible_segments:
         data = {
             "id": f"segment:{segment.pk}",
             "label": f"{segment.name}\n{segment.cidr}",
@@ -171,20 +202,35 @@ def overview_graph(site_id: int | None = None) -> dict:
             data["parent"] = f"site:{segment.site_id}"
         nodes.append({"data": data})
 
-    routers = list(RouterDevice.objects.all())
-    for router in routers:
-        nodes.append(
-            {
-                "data": {
-                    "id": f"router:{router.pk}",
-                    "label": router.name or router.host,
-                    "type": "router",
-                    "host": router.host,
-                }
-            }
-        )
+    router_links = router_segment_links(visible_segments)
+    votes: dict[int, dict[int, int]] = {}
+    for router, segment, _interface in router_links:
+        if segment.site_id:
+            by_site = votes.setdefault(router.pk, {})
+            by_site[segment.site_id] = by_site.get(segment.site_id, 0) + 1
+    router_site = {
+        router_pk: max(by_site.items(), key=lambda item: (item[1], -item[0]))[0]
+        for router_pk, by_site in votes.items()
+    }
 
-    for router, segment, interface in router_segment_links(list(segments)):
+    routers = list(RouterDevice.objects.all())
+    if site_id is not None:
+        routers = [router for router in routers if router_site.get(router.pk) == site_id]
+    visible_routers = {router.pk for router in routers}
+    for router in routers:
+        data = {
+            "id": f"router:{router.pk}",
+            "label": router.name or router.host,
+            "type": "router",
+            "host": router.host,
+        }
+        if router.pk in router_site and router_site[router.pk] in {site.pk for site in sites}:
+            data["parent"] = f"site:{router_site[router.pk]}"
+        nodes.append({"data": data})
+
+    for router, segment, interface in router_links:
+        if router.pk not in visible_routers:
+            continue
         edges.append(
             {
                 "data": {
@@ -192,6 +238,7 @@ def overview_graph(site_id: int | None = None) -> dict:
                     "source": f"router:{router.pk}",
                     "target": f"segment:{segment.pk}",
                     "label": interface,
+                    "type": "router-segment",
                 }
             }
         )

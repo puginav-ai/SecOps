@@ -4,6 +4,14 @@
 
 {% block styles %}
 <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons.min.css' %}">
+<style>
+  .table { font-variant-numeric: tabular-nums; }
+  .map-tip {
+    position: fixed; z-index: 1080; pointer-events: none; white-space: nowrap;
+    padding: .25rem .5rem; border-radius: .375rem; font-size: .75rem; line-height: 1.3;
+    background: rgba(33, 37, 41, .92); color: #fff;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -92,25 +100,41 @@
     </div>
   </form>
 
-  <div class="text-secondary small mb-2">
-    {{ segment.site }} · {{ segment.name }} · <code>{{ segment.cidr }}</code>
-    {% if segment.vlan %} · VLAN {{ segment.vlan }}{% endif %}
-    — активов {{ assets_total }} (в сети {{ active_total }}, молчит {{ quiet_total }}, без ИС {{ unknown_total }})
-    {% if graph_total > graph_shown %}· на графе первые {{ graph_shown }} (см. таблицу ниже){% endif %}
-  </div>
   {% if segment.scan_profile == "ping" %}
     <div class="alert alert-secondary py-2 small mb-2">
-      Профиль сегмента — «только ping-sweep»: порты, тип устройства и ПО не собираются,
-      поэтому на карте точки без ролей. Наполнить паспорта — кнопкой «Просканировать сейчас»
-      или сменить профиль в карточке сегмента.
+      Профиль сегмента — «только ping-sweep»: в ежедневном обходе порты, тип устройства и ПО
+      не собираются. Кнопка «Просканировать сейчас» разово делает глубокий скан (порты и версии)
+      и наполняет паспорта — профиль при этом не меняется.
     </div>
   {% endif %}
 
   <div class="row g-3">
     <div class="col-xl-8">
       <div class="card shadow-sm h-100">
+        <div class="card-header bg-white py-2">
+          <div class="d-flex align-items-center flex-wrap gap-2">
+            <h2 class="h4 mb-0">{{ segment.name }}</h2>
+            <span class="text-secondary small">
+              {{ segment.site }} · <code>{{ segment.cidr }}</code>
+              {% if segment.vlan %} · VLAN {{ segment.vlan }}{% endif %}
+            </span>
+            <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Масштаб карты">
+              <button type="button" class="btn btn-outline-secondary" data-map-zoom="out" title="Уменьшить" aria-label="Уменьшить">−</button>
+              <button type="button" class="btn btn-outline-secondary" data-map-zoom="in" title="Увеличить" aria-label="Увеличить">+</button>
+              <button type="button" class="btn btn-outline-secondary" data-map-zoom="fit" title="Вписать в окно" aria-label="Вписать в окно">Вписать</button>
+            </div>
+          </div>
+          <div class="small text-secondary mt-1">
+            активов {{ assets_total }} · в сети {{ active_total }} · молчит {{ quiet_total }}
+            · без ИС {{ unknown_total }}
+            {% if graph_total > graph_shown %} · на графе первые {{ graph_shown }} (см. таблицу ниже){% endif %}
+            · <a href="#composition">список активов ↓</a>
+          </div>
+        </div>
         <div class="card-body p-0">
-          <div id="map" style="height: 68vh; min-height: 420px;"></div>
+          <div id="map" style="height: 62vh; min-height: 420px;"
+               role="img"
+               aria-label="Схема сегмента: {{ assets_total }} активов; полный список — в таблице «Состав сегмента» ниже."></div>
         </div>
         <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
           {% for item in legend_roles %}
@@ -127,7 +151,17 @@
     </div>
     <div class="col-xl-4">
       <div class="card shadow-sm h-100"><div class="card-body" id="details">
-        <div class="text-secondary">
+        <h6 class="mb-3">{{ segment.name }}</h6>
+        <table class="table table-sm mb-0">
+          <tr><td class="text-secondary">Площадка</td><td>{{ segment.site }}</td></tr>
+          <tr><td class="text-secondary">Подсеть</td>
+            <td><code>{{ segment.cidr }}</code>{% if segment.vlan %} · VLAN {{ segment.vlan }}{% endif %}</td></tr>
+          <tr><td class="text-secondary">Активов</td><td>{{ assets_total }}</td></tr>
+          <tr><td class="text-secondary">В сети</td><td>{{ active_total }}</td></tr>
+          <tr><td class="text-secondary">Молчит</td><td>{{ quiet_total }}</td></tr>
+          <tr><td class="text-secondary">Без ИС</td><td>{{ unknown_total }}</td></tr>
+        </table>
+        <div class="text-secondary small mt-3">
           Клик по активу — паспорт устройства: IP, MAC, вендор, тип, ОС, порты, службы, ИС.
           Жёлтые связи — принадлежность к ИС. Бледные узлы — молчат ({{ miss_threshold }} промаха подряд).
         </div>
@@ -135,7 +169,7 @@
     </div>
   </div>
 
-  <h2 class="h5 mt-4">Состав сегмента</h2>
+  <h2 class="h5 mt-4" id="composition">Состав сегмента</h2>
   <div class="card shadow-sm"><div class="table-responsive">
     <table class="table table-sm align-middle mb-0">
       <thead>
@@ -191,15 +225,28 @@
   </div></div>
 {% else %}
   <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white py-2 d-flex align-items-center flex-wrap gap-2">
+      <span class="fw-semibold">Топология сети</span>
+      <span class="text-secondary small">
+        площадки → роутеры → сегменты · роутеров {{ routers_total }}, сегментов {{ segments|length }}
+      </span>
+      <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Масштаб карты">
+        <button type="button" class="btn btn-outline-secondary" data-map-zoom="out" title="Уменьшить">−</button>
+        <button type="button" class="btn btn-outline-secondary" data-map-zoom="in" title="Увеличить">+</button>
+        <button type="button" class="btn btn-outline-secondary" data-map-zoom="fit" title="Вписать в окно">Вписать</button>
+      </div>
+    </div>
     <div class="card-body p-0">
-      <div id="map" style="height: 62vh; min-height: 400px;"></div>
+      <div id="map" style="height: 68vh; min-height: 500px;"
+           role="img"
+           aria-label="Схема сети: площадки, роутеры и сегменты; список сегментов — карточками ниже."></div>
     </div>
     <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
       {% if "router" in graph_types %}
         <span><i class="bi bi-router" style="color:#495057"></i> роутер</span>
       {% endif %}
       {% if "segment" in graph_types %}
-        <span><i class="bi bi-diagram-2" style="color:#0d6efd"></i> сегмент</span>
+        <span><i class="bi bi-diagram-2" style="color:#0b5ed7"></i> сегмент</span>
       {% endif %}
       {% if "site" in graph_types %}
         <span><i class="bi bi-building" style="color:#adb5bd"></i> площадка</span>
@@ -239,8 +286,8 @@
 (function () {
   const graph = JSON.parse(document.getElementById("graph-data").textContent);
   const roleColors = {
-    server: "#0b7285", workstation: "#4dabf7", printer: "#e8590c", network: "#495057",
-    medical: "#c92a2a", phone: "#12b886", camera: "#7048e8", other: "#adb5bd", unknown: "#dee2e6"
+    server: "#0b7285", workstation: "#1c7ed6", printer: "#e8590c", network: "#495057",
+    medical: "#c92a2a", phone: "#087f5b", camera: "#7048e8", other: "#868e96", unknown: "#dee2e6"
   };
   const roleTitles = {
     server: "сервер", workstation: "АРМ", printer: "печать/МФУ", network: "сетевое оборудование",
@@ -266,8 +313,8 @@
         "background-color": roleColors[role],
         "background-image": "url('" + roleIcons[role] + "')",
         "background-fit": "contain",
-        "background-width": "74%",
-        "background-height": "74%"
+        "background-width": "80%",
+        "background-height": "80%"
       }
     };
   });
@@ -283,44 +330,47 @@
           "label": "data(label)", "font-size": 9, "color": "#343a40",
           "text-valign": "bottom", "text-margin-y": 3,
           "text-wrap": "wrap", "text-max-width": "90px",
-          "background-color": "#dee2e6", "width": 18, "height": 18,
+          "background-color": "#dee2e6", "width": 30, "height": 30,
           "border-width": 1, "border-color": "#ffffff"
       }},
       { selector: 'node[type="site"]', style: {
-          "background-color": "#f1f3f5", "background-opacity": 0.7, "shape": "round-rectangle",
-          "label": "data(label)", "font-size": 11, "font-weight": "bold", "color": "#495057",
-          "text-valign": "top", "text-margin-y": -5, "padding": 18, "border-color": "#ced4da"
+          "background-color": "#f8f9fa", "background-opacity": 0.9, "shape": "round-rectangle",
+          "label": "data(label)", "font-size": 16, "font-weight": "bold", "color": "#212529",
+          "text-valign": "top", "text-halign": "center", "text-wrap": "none",
+          "text-margin-y": -10,
+          "padding": 24, "border-color": "#dee2e6"
       }},
       { selector: 'node[type="router"]', style: {
           "background-color": "#495057", "shape": "ellipse",
-          "width": 28, "height": 28,
+          "width": 32, "height": 32,
           "background-image": "url('{% static 'vendor/icons/router.svg' %}')",
-          "background-fit": "contain", "background-width": "72%", "background-height": "72%",
-          "text-wrap": "none"
+          "background-fit": "contain", "background-width": "78%", "background-height": "78%",
+          "font-size": 12, "color": "#212529", "text-wrap": "none"
       }},
       { selector: 'node[type="segment"]', style: {
-          "background-color": "#0d6efd", "shape": "round-rectangle",
-          "width": 132, "height": 34, "color": "#ffffff", "font-size": 10,
-          "text-valign": "center", "text-wrap": "wrap", "text-max-width": "120px"
+          "background-color": "#0b5ed7", "shape": "round-rectangle",
+          "width": 200, "height": 48, "color": "#ffffff", "font-size": 12,
+          "text-valign": "center", "text-wrap": "wrap", "text-max-width": "188px"
       }},
       { selector: 'node[type="segment-root"]', style: {
-          "background-color": "#f0f6ff", "border-color": "#0d6efd", "border-width": 1.5,
-          "shape": "round-rectangle", "label": "data(label)",
-          "font-size": 11, "font-weight": "bold", "color": "#0d6efd",
-          "text-valign": "top", "text-margin-y": -5,
-          "text-wrap": "wrap", "text-max-width": "260px", "padding": 16
+          "background-color": "#f8fbff", "border-color": "#c9dcff", "border-width": 1,
+          "shape": "round-rectangle", "label": "data(label)", "text-opacity": 0,
+          "padding": 14
       }},
       { selector: 'node[type="system"]', style: {
           "background-color": "#ffc107", "shape": "round-rectangle",
           "width": "label", "height": 22, "padding": "5px", "font-size": 9,
           "text-valign": "center", "text-wrap": "none"
       }},
-      { selector: 'node[type="asset"]', style: { "width": 24, "height": 24 }},
+      { selector: 'node[type="asset"]', style: { "width": 34, "height": 34 }},
       { selector: 'node[type="asset"][status="quiet"]', style: {
           "opacity": 0.55, "border-style": "dashed", "border-width": 2, "border-color": "#adb5bd"
       }},
       { selector: "edge", style: {
           "width": 1, "line-color": "#ced4da", "curve-style": "bezier"
+      }},
+      { selector: 'edge[type="router-segment"]', style: {
+          "line-color": "#ced4da", "opacity": 0.5, "width": 1.1
       }},
       { selector: 'edge[type="member"]', style: { "line-color": "#ffc107", "width": 1.5 }},
       { selector: 'edge[type="router-link"]', style: {
@@ -343,14 +393,14 @@
   } else {
     layoutOverview();
   }
-  cy.layout({ name: "preset", fit: true, padding: 36 }).run();
+  cy.layout({ name: "preset", fit: true, padding: 24 }).run();
   refreshLabels();
   cy.on("zoom", refreshLabels);
 
-  // Подписи активов прячем на мелком зуме: плотный граф превращался в нечитаемые наложения
-  // (структура остаётся видна цветными узлами, текст появляется при приближении)
+  // Подписи активов прячем на мелком зуме: при сотне узлов подписи превращаются в наложения.
+  // Имя устройства доступно во всплывающей подсказке и в паспорте по клику.
   function refreshLabels() {
-    const hide = cy.zoom() < 0.7;
+    const hide = cy.zoom() < 1.25;
     cy.nodes('[type="asset"]').toggleClass("hide-label", hide);
   }
 
@@ -373,8 +423,8 @@
   }
 
   function layoutSegment() {
-    const cellW = 112;
-    const cellH = 72;
+    const cellW = 52;
+    const cellH = 52;
     // Сетевые устройства (шлюзы/коммутаторы сегмента) — первыми: инфраструктура сверху,
     // конечные устройства ниже; в остальном порядок по IP
     const assets = cy.nodes('[type="asset"]').sort(function (a, b) {
@@ -393,39 +443,95 @@
   }
 
   function layoutOverview() {
-    const SEG_W = 170;
-    const SEG_H = 90;
-    const SITE_GAP = 60;
-    // Площадки — в ряд по горизонтали, а не столбиком: вертикальный стек растягивал
-    // контент и fit-зум падал до нечитаемых ~0.5
-    let siteLeft = 0;
+    const SEG_W = 210;
+    const SEG_H = 54;
+    const ROUTER_W = 156;
+    const ROUTER_H = 66;
+    const PAD = 24;
+    const SITE_GAP = 36;
+    const byLabel = function (a, b) {
+      return a.data("label") < b.data("label") ? -1 : 1;
+    };
+    // Колонки сегментов — по ширине контейнера, чтобы площадка не уезжала за экран
+    const cols = Math.max(1, Math.min(6, Math.floor((cy.width() - 3 * PAD) / SEG_W)));
+    let top = 0;
     cy.nodes('[type="site"]').forEach(function (site) {
-      const children = site.children().sort(function (a, b) {
-        return a.data("label") < b.data("label") ? -1 : 1;
+      const routers = site.children('[type="router"]').sort(byLabel);
+      const segments = site.children('[type="segment"]').sort(byLabel);
+      routers.forEach(function (node, index) {
+        node.position({ x: PAD + index * ROUTER_W, y: top + PAD + 8 });
       });
-      const cols = bestColumns(Math.max(children.length, 1), SEG_W, SEG_H);
-      children.forEach(function (node, index) {
+      // Роутеры — отдельным рядом над сегментами: связи остаются короткими и не пересекают
+      // всю схему (иначе обзор превращается в «паутину»)
+      const segmentsTop = top + PAD + (routers.length ? ROUTER_H : 4);
+      segments.forEach(function (node, index) {
         node.position({
-          x: siteLeft + (index % cols) * SEG_W,
-          y: Math.floor(index / cols) * SEG_H,
+          x: PAD + (index % cols) * SEG_W,
+          y: segmentsTop + Math.floor(index / cols) * SEG_H,
         });
       });
-      siteLeft += Math.max(1, cols) * SEG_W + SITE_GAP;
+      const rows = Math.max(1, Math.ceil(segments.length / cols));
+      top = segmentsTop + rows * SEG_H + PAD + SITE_GAP;
     });
-    cy.nodes('[type="segment"]')
+    // Узлы без площадки — отдельным блоком снизу (в норме таких нет)
+    cy.nodes('[type="segment"], [type="router"]')
       .filter(function (node) { return !node.parent().length; })
       .forEach(function (node, index) {
-        node.position({ x: index * SEG_W, y: 0 });
+        node.position({
+          x: PAD + (index % cols) * SEG_W,
+          y: top + PAD + Math.floor(index / cols) * SEG_H,
+        });
       });
-    cy.nodes('[type="router"]').forEach(function (node, index) {
-      node.position({ x: index * 190, y: -130 });
-    });
   }
 
   cy.on("tap", "node", function (event) {
     const data = event.target.data();
     if (data.url) { window.location.href = data.url; return; }
     if (data.type === "asset") { showDetails(data); }
+  });
+
+  // Всплывающая подсказка: на общем плане подписи скрыты, но навести и опознать устройство нужно
+  const tip = document.createElement("div");
+  tip.className = "map-tip d-none";
+  document.body.appendChild(tip);
+  let tipTimer = null;
+  let tipSeen = false;
+  cy.on("mouseover", 'node[type="asset"]', function (event) {
+    const data = event.target.data();
+    const parts = [data.label];
+    if (data.ip && data.label !== data.ip) parts.push(data.ip);
+    if (data.role && data.role !== "unknown") parts.push(roleTitles[data.role] || data.role);
+    const text = parts.join(" · ");
+    clearTimeout(tipTimer);
+    const show = function () {
+      tip.textContent = text;
+      tip.classList.remove("d-none");
+      tipSeen = true;
+    };
+    // Первая подсказка — с задержкой, дальше мгновенно: иначе они «мигают» при движении по сетке
+    if (tipSeen) { show(); } else { tipTimer = setTimeout(show, 350); }
+  });
+  cy.on("mousemove", 'node[type="asset"]', function (event) {
+    const original = event.originalEvent;
+    if (original) {
+      tip.style.left = original.clientX + 14 + "px";
+      tip.style.top = original.clientY + 14 + "px";
+    }
+  });
+  cy.on("mouseout", 'node[type="asset"]', function () {
+    clearTimeout(tipTimer);
+    tip.classList.add("d-none");
+  });
+
+  // Кнопки масштаба в шапке карточки: колесо мыши есть не у всех, «Вписать» возвращает обзор
+  document.querySelectorAll("[data-map-zoom]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const action = button.dataset.mapZoom;
+      if (action === "fit") { cy.fit(undefined, 24); return; }
+      const factor = action === "in" ? 1.25 : 0.8;
+      const level = Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * factor));
+      cy.zoom({ level: level, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+    });
   });
 
   // Подписи связей роутеров (интерфейсы) — только при наведении: иначе они налезают друг

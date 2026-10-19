@@ -60,6 +60,21 @@ def test_scan_creates_run_assets_and_updates_segment(segment: Segment, monkeypat
 
 
 @freeze_time("2026-10-12 09:30:00+03:00")
+def test_manual_scan_is_deep_even_for_ping_profile(segment: Segment, monkeypatch) -> None:
+    """Кнопка «Просканировать сейчас» наполняет паспорт, даже если профиль сегмента — ping."""
+    assert segment.scan_profile == Segment.ScanProfile.PING
+    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, DETAIL_XML])
+
+    result = tasks.scan_segment(segment.pk, triggered_by=ScanRun.Trigger.MANUAL.value)
+
+    assert result["status"] == "ok"
+    assert len(calls) == 3
+    assert any("--top-ports" in args for args in calls)
+    assert "-sV" in calls[2]
+    assert Asset.objects.get(ip="10.60.1.10").ports == [22, 443]
+
+
+@freeze_time("2026-10-12 09:30:00+03:00")
 def test_top100_profile_enriches_ports_and_os(segment: Segment, monkeypatch) -> None:
     segment.scan_profile = Segment.ScanProfile.TOP100
     segment.save(update_fields=["scan_profile"])

@@ -70,8 +70,12 @@ def scan_segment(segment_id: int, triggered_by: str = ScanRun.Trigger.SCHEDULE.v
         return {"status": "refused", "reason": reason}
 
     run = ScanRun.objects.create(segment=segment, triggered_by=triggered_by)
+    manual = triggered_by == ScanRun.Trigger.MANUAL.value
     try:
-        observations = collect_observations(segment)
+        observations = collect_observations(
+            segment,
+            profile=Segment.ScanProfile.TOP100_SERVICES if manual else None,
+        )
     except Exception as exc:  # журнал не должен оставаться в running
         run.status = ScanRun.Status.FAILED
         run.stats = {"error": str(exc)}

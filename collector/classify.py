@@ -15,8 +15,10 @@ PRINTER_PORTS = {9100, 631, 515}  # raw-печать, IPP, LPD
 NETWORK_PORTS = {161, 162, 8291, 830}  # SNMP, Winbox, NETCONF
 PHONE_PORTS = {5060, 5061}  # SIP
 CAMERA_PORTS = {554, 8554}  # RTSP
-DATABASE_PORTS = {1433, 1521, 3306, 5432, 9200}
-SERVER_PORTS = {22, 80, 443, 8080, 8443}
+DATABASE_PORTS = {1433, 1521, 3306, 5432, 9200, 27017, 6379}
+# Службы, которых не бывает на рядовом АРМ: AD, почта, БД. Проверяются до Windows-портов,
+# иначе контроллер домена с 445 попадёт в «АРМ».
+SERVER_SIGNAL_PORTS = DATABASE_PORTS | {25, 53, 88, 389, 636, 3268, 3269, 587, 993, 995}
 WINDOWS_PORTS = {135, 139, 445, 3389}
 
 PRINTER_VENDORS = (
@@ -31,6 +33,21 @@ PRINTER_VENDORS = (
     "lexmark",
 )
 PHONE_VENDORS = ("yealink", "polycom", "grandstream", "avaya", "fanvil", "snom")
+# Потребительские PC-производители: материнские платы и моноблоки, т.е. рабочие места.
+# Dell/HP/Lenovo/Apple сюда не входят — у них есть и серверы; им нужны порты или имя.
+WORKSTATION_VENDORS = (
+    "asrock",
+    "giga-byte",
+    "gigabyte",
+    "micro-star",
+    "biostar",
+    "asustek",
+    "pc aquarius",
+    "aquarius",
+    "aio lcd pc",
+    "tpv",
+    "acer",
+)
 NETWORK_VENDORS = (
     "mikrotik",
     "routerboard",
@@ -65,18 +82,22 @@ def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") ->
         return "medical"
     if any(marker in vendor_l for marker in PHONE_VENDORS):
         return "phone"
+
+    # AD/БД/почта — сильный признак сервера, проверяем до Windows-портов и веб-морды
+    if port_set & SERVER_SIGNAL_PORTS:
+        return "server"
+    # Материнская плата/моноблок — рабочее место, даже если открыт SSH или 7070 (АРМ с ПО)
+    if any(marker in vendor_l for marker in WORKSTATION_VENDORS):
+        return "workstation"
+
     if port_set & NETWORK_PORTS:
         return "network"
-    if port_set & PHONE_PORTS:
-        return "phone"
     if port_set & CAMERA_PORTS:
         return "camera"
-
-    # Серверные порты — сильный признак: проверяем до слабых подсказок имени.
-    if port_set & DATABASE_PORTS:
-        return "server"
-    if port_set & SERVER_PORTS:
-        return "server"
+    if port_set & WINDOWS_PORTS:
+        return "workstation"
+    if port_set & PHONE_PORTS:
+        return "phone"
 
     # Имя хоста — слабый признак: применяем, когда порты ничего не сказали.
     if re.match(r"^(prn|mfp|print|scanner)", name_l):
@@ -88,6 +109,6 @@ def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") ->
     if re.search(r"(^|[-_.])(pc|arm|wks|workstation)", name_l):
         return "workstation"
 
-    if port_set & WINDOWS_PORTS:
-        return "workstation"
+    # Открытые только SSH/веб/7070 — слишком слабый признак: оставляем «не определено»,
+    # иначе половина АРМ с локальной веб-мордой попадает в серверы.
     return ""

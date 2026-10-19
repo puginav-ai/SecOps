@@ -60,6 +60,22 @@ def test_overview_graph_has_site_and_router_segment_edge(
     )
 
 
+def test_overview_places_router_inside_its_site(
+    site: Site, segment: Segment, router: RouterDevice
+) -> None:
+    graph = mapdata.overview_graph()
+
+    router_data = next(
+        node["data"] for node in graph["nodes"] if node["data"]["id"] == f"router:{router.pk}"
+    )
+    site_data = next(
+        node["data"] for node in graph["nodes"] if node["data"]["id"] == f"site:{site.pk}"
+    )
+
+    assert router_data["parent"] == f"site:{site.pk}"
+    assert "1 сегмент" in site_data["label"]
+
+
 def test_segment_graph_links_assets_to_systems(segment: Segment) -> None:
     system = System.objects.create(name="ЛИС-Карта", site=segment.site)
     linked = make_asset(
