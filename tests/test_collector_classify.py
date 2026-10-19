@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collector.classify import classify_role
+from collector.classify import classify_role, derive_os_family
 
 
 def test_network_vendor_wins():
@@ -74,6 +74,14 @@ def test_access_points_by_model_and_vendor():
     assert classify_role([], vendor="Tenda Technology Co.,Ltd.Dongguan") == "ap"
     # коммутатор TP-Link по одному вендору остаётся сетевым оборудованием
     assert classify_role([], vendor="TP-LINK TECHNOLOGIES CO.,LTD.") == "network"
+
+
+def test_os_family_derived_from_ports_when_no_nmap_os():
+    assert derive_os_family([135, 445, 3389]) == "Windows (по портам)"
+    assert derive_os_family([22, 111]) == "Linux/Unix (по портам)"
+    assert derive_os_family([8291]) == "RouterOS"
+    assert derive_os_family([], vendor="Routerboard.com") == "RouterOS"
+    assert derive_os_family([9100]) == ""
 
 
 def test_unknown_stays_empty():

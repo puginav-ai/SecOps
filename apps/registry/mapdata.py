@@ -481,6 +481,58 @@ def normalize_query(query: str) -> str:
     return re.sub(r"[\s,;]+", ".", (query or "").strip()).strip(".")
 
 
+# Поиск по типу устройства: точные слова (регистр не важен), а не подстроки — чтобы
+# «printer-demo» искался как имя, а «принтер» — как все принтеры (SDD §5.10).
+ROLE_QUERIES: dict[str, tuple[str, ...]] = {
+    "workstation": (
+        "арм",
+        "комп",
+        "компьютер",
+        "пк",
+        "рабочая станция",
+        "ноутбук",
+        "workstation",
+        "pc",
+    ),
+    "printer": ("принтер", "мфу", "печать", "printer", "mfp"),
+    "server": ("сервер", "server"),
+    "phone": ("телефон", "телефоны", "ip-телефон", "voip", "phone", "sip"),
+    "mobile": (
+        "смартфон",
+        "смартфоны",
+        "мобильное устройство",
+        "мобильные устройства",
+        "личное устройство",
+        "личные устройства",
+        "mobile",
+    ),
+    "ap": ("точка доступа", "точки доступа", "вайфай", "wifi", "wi-fi", "тд", "ap"),
+    "network": (
+        "роутер",
+        "маршрутизатор",
+        "свитч",
+        "коммутатор",
+        "сетевое оборудование",
+        "router",
+        "switch",
+        "network",
+    ),
+    "camera": ("камера", "видеокамера", "camera"),
+    "medical": ("медицинское изделие", "медизделие", "медицина", "medical"),
+    "other": ("прочее", "other"),
+    "unknown": ("не определена", "неизвестно", "без роли", "unknown"),
+}
+
+
+def role_for_query(query: str) -> str:
+    """Роль по слову-типу («принтер», «мфу», «арм», «свитч»…); "" — это не тип устройства."""
+    value = (query or "").strip().lower()
+    for role, words in ROLE_QUERIES.items():
+        if value == role or value in words:
+            return role
+    return ""
+
+
 def _overlaps(cidr: str, network: ipaddress._BaseNetwork) -> bool:
     try:
         return ipaddress.ip_network(cidr, strict=False).overlaps(network)
@@ -489,7 +541,7 @@ def _overlaps(cidr: str, network: ipaddress._BaseNetwork) -> bool:
 
 
 def search_map(query: str) -> dict:
-    """Поиск на карте: IP с любыми разделителями, имя актива или имя сегмента.
+    """Поиск на карте: тип устройства, IP (любые разделители), имя, вендор, ОС, сегмент.
 
     Сегменты с найденными активами подсвечиваются на графе обзора. Если IP ещё не найден
     как актив, но попадает в известную подсеть — подсвечиваем хотя бы сегмент.
@@ -498,9 +550,44 @@ def search_map(query: str) -> dict:
     normalized = normalize_query(raw)
     assets: list[Asset] = []
     segments: list[Segment] = []
+    segment_counts: list[dict] = []
+    total = 0
+    role_title = ""
     match = ""
     ip = None
     network = None
+    role = role_for_query(raw)
+
+    if role:
+        # Тип устройства: ручная роль главнее авто — как в фильтре состава сегмента
+        if role == Asset.DeviceRole.UNKNOWN:
+            role_q = Q(device_role=Asset.DeviceRole.UNKNOWN, role_auto="")
+        else:
+            role_q = Q(device_role=role) | Q(device_role=Asset.DeviceRole.UNKNOWN, role_auto=role)
+        matched = list(Asset.objects.select_related("segment").filter(role_q).order_by("ip"))
+        total = len(matched)
+        assets = matched[:20]
+        counts: dict[int, int] = {}
+        for asset in matched:
+            if asset.segment_id:
+                counts[asset.segment_id] = counts.get(asset.segment_id, 0) + 1
+        segments = list(Segment.objects.filter(pk__in=counts).order_by("cidr"))
+        segment_counts = [{"segment": segment, "count": counts[segment.pk]} for segment in segments]
+        role_title = dict(Asset.DeviceRole.choices).get(role, role)
+        match = "role"
+        return {
+            "query": raw,
+            "normalized": normalized,
+            "match": match,
+            "role_code": role,
+            "role_title": role_title,
+            "total": total,
+            "assets": assets,
+            "segments": segments,
+            "segment_counts": segment_counts,
+            "segment_ids": [segment.pk for segment in segments],
+        }
+
     if normalized:
         try:
             ip = ipaddress.ip_address(normalized)
@@ -538,7 +625,7 @@ def search_map(query: str) -> dict:
             if assets:
                 match = "name"
         if not assets:
-            # Последний рубеж — вендор («new platforms» → Континенты, «hp» → печать)
+            # Вендор («new platforms» → Континенты, «hp» → печать)
             assets = list(
                 Asset.objects.select_related("segment")
                 .filter(mac_vendor__icontains=raw)
@@ -546,6 +633,15 @@ def search_map(query: str) -> dict:
             )
             if assets:
                 match = "vendor"
+        if not assets:
+            # ОС из nmap: «windows», «linux», «windows 10»
+            assets = list(
+                Asset.objects.select_related("segment")
+                .filter(Q(os_name__icontains=raw) | Q(os_family__icontains=raw))
+                .order_by("ip")[:20]
+            )
+            if assets:
+                match = "os"
 
     if assets:
         ids = {asset.segment_id for asset in assets if asset.segment_id}
@@ -572,7 +668,11 @@ def search_map(query: str) -> dict:
         "query": raw,
         "normalized": normalized,
         "match": match,
+        "role_code": "",
+        "role_title": "",
+        "total": 0,
         "assets": assets,
         "segments": segments,
+        "segment_counts": segment_counts,
         "segment_ids": [segment.pk for segment in segments],
     }

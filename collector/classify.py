@@ -99,6 +99,25 @@ NETWORK_VENDORS = (
 )
 
 
+def derive_os_family(ports: Iterable[int], vendor: str = "") -> str:
+    """Семейство ОС по портам/вендору, когда nmap -O не запускался (для поиска по ОС).
+
+    Это подсказка, а не точная ОС — в подписи так и пишем «(по портам)»; точная ОС
+    появится, если для сегмента отдельно включить -O (SDD §5.10).
+    """
+    port_set = {int(port) for port in (ports or ()) if str(port).isdigit()}
+    vendor_l = (vendor or "").lower()
+    if port_set & {8291, 830} or any(
+        marker in vendor_l for marker in ("routerboard", "mikrotik")
+    ):
+        return "RouterOS"
+    if port_set & {135, 139, 445, 3389}:
+        return "Windows (по портам)"
+    if port_set & {22, 111}:
+        return "Linux/Unix (по портам)"
+    return ""
+
+
 def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") -> str:
     """Значение Asset.DeviceRole по портам/вендору/имени; "" — недостаточно признаков."""
     port_set = {int(port) for port in (ports or ()) if str(port).isdigit()}

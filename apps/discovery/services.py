@@ -16,7 +16,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.registry.models import Asset, AssetEvent, Segment
-from collector.classify import classify_role
+from collector.classify import classify_role, derive_os_family
 from collector.nmap import ObservedHost
 from collector.oui import vendor_for_mac
 from collector.window import in_scan_window
@@ -101,6 +101,7 @@ def apply_observations(segment: Segment, observations: Sequence[ObservedHost]) -
                 mac_vendor=vendor,
                 hostname=observed.hostname,
                 os_name=observed.os_name,
+                os_family=derive_os_family(observed.ports, vendor),
                 site=segment.site,
                 segment=segment,
                 discovery_source=observed.source,
@@ -202,6 +203,12 @@ def _update_asset(
         asset.software = software_label(observed)
     asset.hostname = observed.hostname or asset.hostname
     asset.os_name = observed.os_name or asset.os_name
+    # ОС для поиска: если точной (nmap -O) нет — подсказка по портам/вендору, с пометкой
+    if not asset.os_name:
+        derived_family = derive_os_family(ports or asset.ports, vendor or asset.mac_vendor)
+        if derived_family and derived_family != asset.os_family:
+            changes["os_family"] = {"from": asset.os_family, "to": derived_family}
+            asset.os_family = derived_family
     asset.site = segment.site
     asset.segment = segment
     asset.last_seen_at = now

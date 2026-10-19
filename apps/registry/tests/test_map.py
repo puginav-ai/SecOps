@@ -142,6 +142,42 @@ def test_search_map_by_vendor(segment: Segment) -> None:
     assert [asset.ip for asset in found["assets"]] == ["10.70.1.10"]
 
 
+def test_search_map_by_role_keyword(segment: Segment) -> None:
+    make_asset(segment, "10.70.1.20", role_auto="printer", hostname="prn-1")
+    make_asset(segment, "10.70.1.21", role_auto="workstation")
+    make_asset(segment, "10.70.1.22", role_auto="printer")
+
+    found = mapdata.search_map("принтер")
+
+    assert found["match"] == "role"
+    assert found["role_code"] == "printer"
+    assert found["total"] == 2
+    assert [(item["segment"].pk, item["count"]) for item in found["segment_counts"]] == [
+        (segment.pk, 2)
+    ]
+    assert found["segment_ids"] == [segment.pk]
+    assert mapdata.search_map("МФУ")["role_code"] == "printer"
+    assert mapdata.search_map("арм")["role_code"] == "workstation"
+    assert mapdata.search_map("точка доступа")["role_code"] == "ap"
+    assert mapdata.search_map("свитч")["role_code"] == "network"
+
+
+def test_search_map_role_honours_manual_role(segment: Segment) -> None:
+    make_asset(segment, "10.70.1.30", role_auto="printer", device_role="phone")
+
+    assert mapdata.search_map("телефон")["total"] == 1
+    assert mapdata.search_map("принтер")["total"] == 0
+
+
+def test_search_map_by_os(segment: Segment) -> None:
+    make_asset(segment, "10.70.1.40", os_name="Windows 10")
+
+    found = mapdata.search_map("windows")
+
+    assert found["match"] == "os"
+    assert [asset.ip for asset in found["assets"]] == ["10.70.1.40"]
+
+
 def test_search_map_by_segment_name(segment: Segment) -> None:
     found = mapdata.search_map("Сегмент-Карт")
 
