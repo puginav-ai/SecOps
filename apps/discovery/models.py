@@ -51,6 +51,7 @@ class RouterDevice(models.Model):
     name = models.CharField("имя", max_length=120, blank=True, default="")
     addresses = models.JSONField("адреса интерфейсов", default=list, blank=True)
     neighbors = models.JSONField("соседи (MNDP/LLDP)", default=list, blank=True)
+    routes = models.JSONField("маршруты (активные)", default=list, blank=True)
     last_seen_at = models.DateTimeField("последнее обнаружение")
 
     class Meta:

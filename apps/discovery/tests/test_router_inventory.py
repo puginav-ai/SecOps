@@ -6,9 +6,34 @@ import pytest
 
 from apps.discovery import tasks
 from apps.discovery.models import RouterDevice
-from collector.mikrotik import RouterData, normalized_addresses, normalized_neighbors
+from collector.mikrotik import (
+    RouterData,
+    normalized_addresses,
+    normalized_neighbors,
+    normalized_routes,
+)
 
 pytestmark = pytest.mark.django_db
+
+
+def test_normalized_routes_keep_active_private_networks_only():
+    rows = [
+        {"dst-address": "10.0.2.0/24", "gateway": "ether5", "active": "true", "connected": "true"},
+        {
+            "dst-address": "172.16.0.0/16",
+            "gateway": "10.0.2.56",
+            "active": "true",
+            "static": "true",
+        },
+        {"dst-address": "0.0.0.0/0", "gateway": "10.0.2.1", "active": "true"},
+        {"dst-address": "10.0.9.0/24", "gateway": "10.0.2.77", "active": "false"},
+        {"dst-address": "не-сеть", "gateway": "x", "active": "true"},
+    ]
+
+    assert normalized_routes(rows) == [
+        {"dst": "10.0.2.0/24", "gateway": "ether5", "kind": "connected"},
+        {"dst": "172.16.0.0/16", "gateway": "10.0.2.56", "kind": "static"},
+    ]
 
 
 def test_normalized_neighbors_keep_address_identity_and_interface():
@@ -65,6 +90,14 @@ def test_refresh_inventory_upserts_router(monkeypatch, router_settings) -> None:
             identity="MT-Root",
             addresses=({"address": "10.0.2.1/24", "interface": "bridge"},),
             neighbors=({"address": "10.0.0.2", "identity": "MT-Pol", "interface": "sfp1"},),
+            routes=(
+                {
+                    "dst-address": "10.0.2.0/24",
+                    "gateway": "bridge",
+                    "active": "true",
+                    "connected": "true",
+                },
+            ),
         ),
     )
 
@@ -75,6 +108,7 @@ def test_refresh_inventory_upserts_router(monkeypatch, router_settings) -> None:
     assert router.addresses == [
         {"address": "10.0.2.1/24", "interface": "bridge", "network": "10.0.2.0/24"}
     ]
+    assert router.routes == [{"dst": "10.0.2.0/24", "gateway": "bridge", "kind": "connected"}]
     assert router.neighbors == [
         {
             "address": "10.0.0.2",

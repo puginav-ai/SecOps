@@ -18,13 +18,14 @@ ZERO_MAC = "00:00:00:00:00:00"
 
 @dataclass(frozen=True)
 class RouterData:
-    """Выгрузка роутера: ARP, DHCP-аренды, имя, адреса и соседи (MNDP/LLDP/CDP)."""
+    """Выгрузка роутера: ARP, DHCP-аренды, имя, адреса, соседи и маршруты."""
 
     arp: tuple[Mapping[str, str], ...] = ()
     leases: tuple[Mapping[str, str], ...] = ()
     identity: str = ""
     addresses: tuple[Mapping[str, str], ...] = ()
     neighbors: tuple[Mapping[str, str], ...] = ()
+    routes: tuple[Mapping[str, str], ...] = ()
 
 
 def fetch_router_data(
@@ -57,6 +58,7 @@ def fetch_router_data(
         identity_rows = tuple(dict(row) for row in api.path("system", "identity"))
         addresses = tuple(dict(row) for row in api.path("ip", "address"))
         neighbors = tuple(dict(row) for row in api.path("ip", "neighbor"))
+        routes = tuple(dict(row) for row in api.path("ip", "route"))
     finally:
         api.close()
     identity = str(identity_rows[0].get("name", "")) if identity_rows else ""
@@ -66,6 +68,7 @@ def fetch_router_data(
         identity=identity,
         addresses=addresses,
         neighbors=neighbors,
+        routes=routes,
     )
 
 
@@ -88,6 +91,44 @@ def normalized_neighbors(rows: Iterable[Mapping[str, str]]) -> list[dict]:
                 "interface": str(row.get("interface", "")).strip(),
                 "platform": str(row.get("platform", "")).strip(),
                 "mac": str(row.get("mac-address", "")).strip().lower(),
+            }
+        )
+    return result
+
+
+def normalized_routes(rows: Iterable[Mapping[str, str]]) -> list[dict]:
+    """Строки /ip/route → [{dst, gateway, kind}] по активным маршрутам, кроме дефолта.
+
+    Маршруты нужны, чтобы видеть сети, которые роутер знает за собой (в т.ч. за NAT/NAT-роутерами
+    соседей): «какие ещё подсети есть в контуре» — SDD §5.10. Дефолт и неактивные пропускаем.
+    """
+
+    def flag(value) -> bool:
+        # RouterOS API отдаёт флаги как bool или строки («true»/«false»)
+        return value in (True, "true", "yes", 1)
+
+    result: list[dict] = []
+    for row in rows:
+        if not flag(row.get("active")):
+            continue
+        dst = str(row.get("dst-address", "")).strip()
+        if not dst or dst == "0.0.0.0/0":
+            continue
+        try:
+            network = ipaddress.ip_network(dst, strict=False)
+        except ValueError:
+            continue
+        if flag(row.get("connected")):
+            kind = "connected"
+        elif flag(row.get("static")):
+            kind = "static"
+        else:
+            kind = "dynamic"
+        result.append(
+            {
+                "dst": str(network),
+                "gateway": str(row.get("gateway", "")).strip(),
+                "kind": kind,
             }
         )
     return result

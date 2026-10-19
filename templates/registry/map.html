@@ -375,7 +375,11 @@
   function layoutSegment() {
     const cellW = 112;
     const cellH = 72;
+    // Сетевые устройства (шлюзы/коммутаторы сегмента) — первыми: инфраструктура сверху,
+    // конечные устройства ниже; в остальном порядок по IP
     const assets = cy.nodes('[type="asset"]').sort(function (a, b) {
+      const rank = function (node) { return node.data("role") === "network" ? 0 : 1; };
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
       return a.data("ip") < b.data("ip") ? -1 : 1;
     });
     const cols = bestColumns(Math.max(assets.length, 1), cellW, cellH);
@@ -458,7 +462,12 @@
       '<h6 class="mb-3">' + esc(data.label) + "</h6><table class=\"table table-sm mb-0\">" +
       rows.filter(function (row) { return row[1]; }).map(function (row) {
         return '<tr><td class="text-secondary">' + row[0] + "</td><td>" + esc(row[1]) + "</td></tr>";
-      }).join("") + "</table>";
+      }).join("") + "</table>" +
+      (data.role === "network" || data.role_manual === "network"
+        ? '<div class="alert alert-secondary py-2 small mt-3 mb-0">Сетевое устройство: за ним могут быть' +
+          " свои подсети (роутер/NAT). Сетевыми методами они не видны — нужен доступ к устройству" +
+          " или данные заказчика.</div>"
+        : "");
   }
 })();
 </script>
