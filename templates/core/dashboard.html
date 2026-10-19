@@ -66,6 +66,32 @@
   </p>
 {% endif %}
 
+{% if summary.incidents_open or summary.incident_overdue_count %}
+  <h2 class="h5">Инциденты</h2>
+  <p class="mb-2">
+    Открыто: <strong>{{ summary.incidents_open }}</strong> ·
+    просрочено стадий:
+    <strong class="{% if summary.incident_overdue_count %}text-danger{% endif %}">{{ summary.incident_overdue_count }}</strong>
+    — <a href="{% url 'incidents:list' %}">к инцидентам →</a>
+  </p>
+  {% if summary.incident_overdue_top %}
+    <div class="card shadow-sm mb-4"><div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Инцидент</th><th>Стадия</th><th>Срок</th></tr></thead>
+        <tbody>
+          {% for stage in summary.incident_overdue_top %}
+            <tr class="table-danger">
+              <td><a href="{% url 'incidents:detail' stage.incident_id %}">#{{ stage.incident_id }}</a></td>
+              <td>{{ stage.stage_code }}</td>
+              <td>{{ stage.deadline_at|date:"d.m.Y H:i" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  {% endif %}
+{% endif %}
+
 {% if summary.overdue_top %}
   <h2 class="h5">Просроченные обязательства</h2>
   <div class="card shadow-sm mb-4"><div class="table-responsive">

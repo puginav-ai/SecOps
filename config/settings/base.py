@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.kzi",
     "apps.reporting",
+    "apps.incidents",
 ]
 
 MIDDLEWARE = [
@@ -183,6 +184,11 @@ CELERY_BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     "obligations-daily": {
         "task": "apps.obligations.tasks.daily_obligations",
         "schedule": crontab(hour=8, minute=5),
+    },
+    # Эскалации просроченных стадий инцидентов
+    "incidents-daily": {
+        "task": "apps.incidents.tasks.escalate_overdue_stages",
+        "schedule": crontab(hour=8, minute=10),
     },
 }
 

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Инциденты{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">Инциденты</h1>
+  {% if can_edit %}
+    <a class="btn btn-primary btn-sm" href="{% url 'incidents:create' %}">Зарегистрировать инцидент</a>
+  {% endif %}
+</div>
+<p class="text-secondary mb-3">
+  Таймеры стадий уведомлений (1ч / T1 / T2): срок = время обнаружения + правило справочника.
+  Просроченных стадий: <strong class="{% if overdue_count %}text-danger{% endif %}">{{ overdue_count }}</strong>.
+</p>
+
+<h2 class="h5">Открытые и в разборе</h2>
+<div class="card shadow-sm mb-4">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>#</th><th>Вид</th><th>Серьёзность</th><th>Обнаружен</th><th>ИС</th><th>Статус</th><th>Стадии</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for incident in active %}
+          <tr>
+            <td>{{ incident.pk }}</td>
+            <td>{{ incident.get_kind_display }}</td>
+            <td>
+              {% if incident.severity == "high" %}<span class="badge text-bg-danger">высокая</span>
+              {% elif incident.severity == "medium" %}<span class="badge text-bg-warning">средняя</span>
+              {% else %}<span class="badge text-bg-secondary">низкая</span>{% endif %}
+            </td>
+            <td>{{ incident.detected_at|date:"d.m.Y H:i" }}</td>
+            <td>{{ incident.system|default:"—" }}</td>
+            <td>{{ incident.get_status_display }}</td>
+            <td>
+              {% with total=incident.stages.count closed=incident.stages.count %}{% endwith %}
+              {{ incident.stages.count }}
+            </td>
+            <td class="text-end"><a class="btn btn-outline-secondary btn-sm" href="{% url 'incidents:detail' incident.pk %}">Открыть</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="text-secondary">Открытых инцидентов нет — и это хорошо.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2 class="h5">Недавно закрытые</h2>
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>#</th><th>Вид</th><th>Обнаружен</th><th>Закрыт</th></tr></thead>
+      <tbody>
+        {% for incident in closed %}
+          <tr>
+            <td><a href="{% url 'incidents:detail' incident.pk %}">{{ incident.pk }}</a></td>
+            <td>{{ incident.get_kind_display }}</td>
+            <td>{{ incident.detected_at|date:"d.m.Y H:i" }}</td>
+            <td>{{ incident.closed_at|date:"d.m.Y H:i" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="text-secondary">Закрытых инцидентов пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

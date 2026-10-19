@@ -14,6 +14,8 @@ from apps.core.access import MODULES, ROLE_TITLES, is_owner_only, user_modules, 
 from apps.discovery.services import MISS_THRESHOLD
 from apps.evidence.models import EvidenceObject
 from apps.evidence.services import visible_evidence
+from apps.incidents.models import Incident
+from apps.incidents.services import overdue_stages as incident_overdue_stages
 from apps.kzi.models import Assessment
 from apps.obligations.models import ObligationInstance
 from apps.registry.models import Asset, System
@@ -75,6 +77,12 @@ def _summary(user) -> dict:
             .first()
         )
 
+    open_incidents = Incident.objects.exclude(status=Incident.Status.CLOSED)
+    overdue_incident_stages = incident_overdue_stages()
+    if owner_only:
+        open_incidents = open_incidents.filter(system__in=systems)
+        overdue_incident_stages = overdue_incident_stages.filter(incident__system__in=systems)
+
     return {
         "assets_total": assets_total,
         "assets_active": assets_active,
@@ -89,6 +97,9 @@ def _summary(user) -> dict:
         "evidence_expiring": evidence_expiring,
         "assessment_soon_limit": soon_limit,
         "last_assessment": last_assessment,
+        "incidents_open": open_incidents.count(),
+        "incident_overdue_count": overdue_incident_stages.count(),
+        "incident_overdue_top": list(overdue_incident_stages[:5]),
     }
 
 

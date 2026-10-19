@@ -15,5 +15,6 @@ urlpatterns = [
     path("notifications/", include("apps.notifications.urls")),
     path("kzi/", include("apps.kzi.urls")),
     path("reports/", include("apps.reporting.urls")),
+    path("incidents/", include("apps.incidents.urls")),
     path("", include("apps.core.urls")),
 ]

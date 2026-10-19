@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Новый инцидент{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">Регистрация инцидента</h1>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Зарегистрировать</button>
+      <a class="btn btn-outline-secondary" href="{% url 'incidents:list' %}">Отмена</a>
+    </form>
+  </div>
+</div>
+
+<p class="text-secondary small mt-3 mb-0">
+  Стадии уведомлений развернутся автоматически по справочнику правил (1ч / T1 / T2 и внешние).
+  Каждая стадия закрывается только с evidence отправки.
+</p>
+{% endblock %}

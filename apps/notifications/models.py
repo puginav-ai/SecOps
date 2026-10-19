@@ -35,6 +35,14 @@ class Notification(models.Model):
         on_delete=models.CASCADE,
         related_name="notifications",
     )
+    incident = models.ForeignKey(
+        "incidents.Incident",
+        verbose_name="инцидент",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
     dedup_key = models.CharField("ключ дедупликации", max_length=250, unique=True)
     created_at = models.DateTimeField("создано", auto_now_add=True)
 

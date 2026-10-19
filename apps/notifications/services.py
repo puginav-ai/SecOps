@@ -45,10 +45,15 @@ def _deliver(dedup_key: str, defaults: dict, *, email: str = "") -> int:
     return 1
 
 
-def notify_user(user, kind: str, message: str, *, instance=None, dedup_suffix: str = "") -> int:
+def notify_user(
+    user, kind: str, message: str, *, instance=None, incident=None, dedup_suffix: str = ""
+) -> int:
     """Уведомление учётной записи: in-app + почта. Возвращает число новых отправок."""
     sent = 0
-    base = f"{kind}:{getattr(instance, 'pk', '-')}:user{user.pk}:{dedup_suffix}"
+    base = (
+        f"{kind}:{getattr(instance, 'pk', '-')}:inc{getattr(incident, 'pk', '-')}:"
+        f"user{user.pk}:{dedup_suffix}"
+    )
     sent += _deliver(
         f"{base}:in_app",
         {
@@ -57,6 +62,7 @@ def notify_user(user, kind: str, message: str, *, instance=None, dedup_suffix: s
             "kind": kind,
             "message": message,
             "instance": instance,
+            "incident": incident,
         },
     )
     if user.email:
@@ -68,16 +74,22 @@ def notify_user(user, kind: str, message: str, *, instance=None, dedup_suffix: s
                 "kind": kind,
                 "message": message,
                 "instance": instance,
+                "incident": incident,
             },
             email=user.email,
         )
     return sent
 
 
-def notify_person(person, kind: str, message: str, *, instance=None, dedup_suffix: str = "") -> int:
+def notify_person(
+    person, kind: str, message: str, *, instance=None, incident=None, dedup_suffix: str = ""
+) -> int:
     """Уведомление человека из реестра: in-app через его учётку и/или на почту."""
     sent = 0
-    base = f"{kind}:{getattr(instance, 'pk', '-')}:person{person.pk}:{dedup_suffix}"
+    base = (
+        f"{kind}:{getattr(instance, 'pk', '-')}:inc{getattr(incident, 'pk', '-')}:"
+        f"person{person.pk}:{dedup_suffix}"
+    )
     if person.user_id:
         sent += _deliver(
             f"{base}:in_app",
@@ -87,6 +99,7 @@ def notify_person(person, kind: str, message: str, *, instance=None, dedup_suffi
                 "kind": kind,
                 "message": message,
                 "instance": instance,
+                "incident": incident,
             },
         )
     if person.email:
@@ -98,6 +111,7 @@ def notify_person(person, kind: str, message: str, *, instance=None, dedup_suffi
                 "kind": kind,
                 "message": message,
                 "instance": instance,
+                "incident": incident,
             },
             email=person.email,
         )

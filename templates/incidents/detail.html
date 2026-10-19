@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Инцидент #{{ incident.pk }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h1 class="h3 mb-0">
+    Инцидент #{{ incident.pk }} — {{ incident.get_kind_display }}, {{ incident.get_severity_display }}
+  </h1>
+  <div>
+    {% if can_edit and incident.status == "open" %}
+      <form method="post" action="{% url 'incidents:status' incident.pk %}" class="d-inline">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="investigating">
+        <button class="btn btn-outline-primary btn-sm" type="submit">Взять в разбор</button>
+      </form>
+    {% endif %}
+    {% if can_edit and incident.status != "closed" %}
+      <form method="post" action="{% url 'incidents:close' incident.pk %}" class="d-inline"
+            onsubmit="return confirm('Закрыть инцидент?');">
+        {% csrf_token %}
+        <button class="btn btn-success btn-sm" type="submit">Закрыть инцидент</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+<p class="text-secondary mb-3">
+  Статус: <strong>{{ incident.get_status_display }}</strong> ·
+  обнаружен {{ incident.detected_at|date:"d.m.Y H:i" }} ·
+  ИС: {{ incident.system|default:"—" }} ·
+  <a href="{% url 'incidents:list' %}">← Все инциденты</a>
+</p>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <p class="mb-0">{{ incident.description|linebreaksbr }}</p>
+    {% if incident.closed_at %}
+      <p class="text-secondary small mb-0 mt-2">Закрыт {{ incident.closed_at|date:"d.m.Y H:i" }}</p>
+    {% endif %}
+  </div>
+</div>
+
+<h2 class="h5">Таймеры стадий</h2>
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>Стадия</th><th>Правило</th><th>Срок</th><th>Осталось</th><th>Статус</th><th>Evidence</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for stage in stages %}
+          <tr class="{% if stage.is_overdue %}table-danger{% elif stage.sent_at %}table-success{% endif %}">
+            <td><strong>{{ stage.stage_code }}</strong></td>
+            <td class="text-secondary small">{{ stage.rule.template_code }}</td>
+            <td>{{ stage.deadline_at|date:"d.m.Y H:i" }}</td>
+            <td>
+              {% if stage.sent_at %}
+                —
+              {% elif stage.is_overdue %}
+                <span class="badge text-bg-danger">просрочено</span>
+              {% else %}
+                {{ stage.deadline_at|timeuntil }}
+              {% endif %}
+            </td>
+            <td>{{ stage.get_status_display }}{% if stage.channel %} · {{ stage.get_channel_display }}{% endif %}</td>
+            <td>
+              {% if stage.evidence_id %}
+                <a href="{% url 'evidence:detail' stage.evidence_id %}">открыть</a>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if can_edit and stage.form %}
+                <form method="post" action="{% url 'incidents:stage_send' incident.pk stage.pk %}"
+                      class="d-flex gap-1 justify-content-end">
+                  {% csrf_token %}
+                  {{ stage.form.evidence }}
+                  {{ stage.form.channel }}
+                  <button class="btn btn-outline-success btn-sm" type="submit">Отправлено</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-secondary">Стадий нет — справочник правил пуст.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if can_edit %}
+  <p class="text-secondary small mt-3 mb-0">
+    Стадия закрывается только приложением evidence отправки (письмо/скрин/выгрузка) — правило SDD §3.6.
+  </p>
+{% endif %}
+{% endblock %}
