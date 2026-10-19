@@ -297,6 +297,15 @@
       {% if "router" in graph_types %}
         <span><i class="bi bi-router" style="color:#495057"></i> роутер</span>
       {% endif %}
+      {% if "gateway" in graph_types %}
+        <span><i class="bi bi-shield-lock" style="color:#1971c2"></i> шлюз между сетью и интернетом</span>
+      {% endif %}
+      {% if "internet" in graph_types %}
+        <span><i class="bi bi-cloud" style="color:#1971c2"></i> интернет</span>
+      {% endif %}
+      {% if graph_has_core %}
+        <span><i class="bi bi-record-circle" style="color:#212529"></i> ядро сети</span>
+      {% endif %}
       {% if "segment" in graph_types %}
         <span><i class="bi bi-diagram-2" style="color:#0b5ed7"></i> сегмент</span>
       {% endif %}
@@ -421,12 +430,34 @@
           "shape": "round-rectangle", "label": "data(label)", "text-opacity": 0,
           "padding": 14
       }},
+      { selector: 'node[type="edge"]', style: {
+          "background-color": "#ffffff", "background-opacity": 0.6, "shape": "round-rectangle",
+          "border-style": "dashed", "border-color": "#adb5bd",
+          "label": "data(label)", "font-size": 14, "font-weight": "bold", "color": "#495057",
+          "text-valign": "top", "text-halign": "center", "text-margin-y": -8, "padding": 26
+      }},
+      { selector: 'node[type="internet"]', style: {
+          "background-color": "#e7f5ff", "border-width": 2, "border-color": "#1971c2",
+          "shape": "ellipse", "width": 64, "height": 64,
+          "background-image": "url('{% static 'vendor/icons/cloud.svg' %}')",
+          "background-fit": "contain", "background-width": "64%", "background-height": "64%",
+          "color": "#1971c2", "font-size": 13, "font-weight": "bold"
+      }},
+      { selector: 'node[type="gateway"]', style: {
+          "background-color": "#ffffff", "border-width": 1.5, "border-color": "#1971c2",
+          "shape": "round-rectangle", "width": 210, "height": 44,
+          "color": "#1971c2", "font-size": 12, "text-valign": "center",
+          "text-wrap": "wrap", "text-max-width": "90%"
+      }},
       { selector: 'node[type="system"]', style: {
           "background-color": "#ffc107", "shape": "round-rectangle",
           "width": "label", "height": 22, "padding": "5px", "font-size": 9,
           "text-valign": "center", "text-wrap": "none"
       }},
       { selector: 'node[type="asset"]', style: { "width": 34, "height": 34 }},
+      { selector: 'node[type="router"].core', style: {
+          "border-width": 3, "border-color": "#212529"
+      }},
       { selector: 'node[type="asset"][status="quiet"]', style: {
           "opacity": 0.55, "border-style": "dashed", "border-width": 2, "border-color": "#adb5bd"
       }},
@@ -443,6 +474,14 @@
           "text-rotation": "autorotate", "text-background-color": "#ffffff",
           "text-background-opacity": 0.85, "text-background-padding": "2px"
       }},
+      { selector: 'edge[type="wan"], edge[type="default-route"]', style: {
+          "line-color": "#1971c2", "width": 2, "target-arrow-shape": "triangle",
+          "target-arrow-color": "#1971c2", "curve-style": "bezier",
+          "font-size": 8, "color": "#495057",
+          "text-background-color": "#ffffff", "text-background-opacity": 0.85,
+          "text-background-padding": "1px"
+      }},
+      { selector: "edge.standby", style: { "line-style": "dashed", "opacity": 0.55 }},
       { selector: "node.hide-label", style: { "text-opacity": 0 }},
     ].concat(roleSelectors),
   });
@@ -526,6 +565,20 @@
     // наполненные сегменты первыми, пустые чипы уходят в конец
     const rowWidth = Math.max(cy.width() - 2 * PAD - 40, 480);
     let top = 0;
+    // Граница с интернетом — отдельной полосой сверху: облако → шлюзы («Континент») → ядро
+    const edgeBand = cy.nodes('[type="edge"]');
+    if (edgeBand.length) {
+      edgeBand.children('[type="internet"]').forEach(function (node) {
+        node.position({ x: PAD + 130, y: top + PAD + 44 });
+      });
+      edgeBand
+        .children('[type="gateway"]')
+        .sort(byLabel)
+        .forEach(function (node, index) {
+          node.position({ x: PAD + 360 + index * 230, y: top + PAD + 44 });
+        });
+      top += PAD + 88 + PAD + SITE_GAP + 28;
+    }
     cy.nodes('[type="site"]').forEach(function (site) {
       const routers = site.children('[type="router"]').sort(byLabel);
       const segments = site.children('[type="segment"]').sort(function (a, b) {
@@ -578,13 +631,13 @@
   let tipTimer = null;
   let tipSeen = false;
   function tipText(data) {
-    if (data.type === "segment") return data.summary || data.label;
+    if (data.type === "segment" || data.type === "gateway") return data.summary || data.label;
     const parts = [data.label];
     if (data.ip && data.label !== data.ip) parts.push(data.ip);
     if (data.role && data.role !== "unknown") parts.push(roleTitles[data.role] || data.role);
     return parts.join(" · ");
   }
-  cy.on("mouseover", 'node[type="asset"], node[type="segment"]', function (event) {
+  cy.on("mouseover", 'node[type="asset"], node[type="segment"], node[type="gateway"]', function (event) {
     const text = tipText(event.target.data());
     clearTimeout(tipTimer);
     const show = function () {
@@ -595,14 +648,14 @@
     // Первая подсказка — с задержкой, дальше мгновенно: иначе они «мигают» при движении по сетке
     if (tipSeen) { show(); } else { tipTimer = setTimeout(show, 350); }
   });
-  cy.on("mousemove", 'node[type="asset"], node[type="segment"]', function (event) {
+  cy.on("mousemove", 'node[type="asset"], node[type="segment"], node[type="gateway"]', function (event) {
     const original = event.originalEvent;
     if (original) {
       tip.style.left = original.clientX + 14 + "px";
       tip.style.top = original.clientY + 14 + "px";
     }
   });
-  cy.on("mouseout", 'node[type="asset"], node[type="segment"]', function () {
+  cy.on("mouseout", 'node[type="asset"], node[type="segment"], node[type="gateway"]', function () {
     clearTimeout(tipTimer);
     tip.classList.add("d-none");
   });

@@ -155,6 +155,16 @@ def _plural(count: int, one: str, few: str, many: str) -> str:
     return many
 
 
+def _same_subnet24(left: str, right: str) -> bool:
+    """Одинаковая /24 — для пары «Континентов» в одном служебном /29."""
+    try:
+        return ipaddress.ip_network(f"{left}/24", strict=False) == ipaddress.ip_network(
+            f"{right}/24", strict=False
+        )
+    except ValueError:
+        return False
+
+
 def overview_graph(
     site_id: int | None = None,
     *,
@@ -265,16 +275,58 @@ def overview_graph(
     if site_id is not None:
         routers = [router for router in routers if router_site.get(router.pk) == site_id]
     visible_routers = {router.pk for router in routers}
+
+    # Граница с интернетом (SDD §5.10): default-маршруты наружу показывают шлюзы
+    # («Континент» — активный и резервный) и ядро. Маршрут на наш же роутер — не граница.
+    router_ips: set[str] = set()
     for router in routers:
+        router_ips.add(router.host)
+        for item in router.addresses or []:
+            router_ips.add(str(item.get("address", "")).split("/")[0])
+    gateways: dict[str, dict] = {}
+    core_ids: set[int] = set()
+    for router in routers:
+        for route in router.routes or []:
+            if route.get("dst") != "0.0.0.0/0":
+                continue
+            gateway_ip = str(route.get("gateway", "")).strip()
+            try:
+                ipaddress.ip_address(gateway_ip)
+            except ValueError:
+                continue  # gateway — интерфейс, значит маршрут не наружу
+            if gateway_ip in router_ips:
+                continue
+            meta = gateways.setdefault(gateway_ip, {"routers": {}})
+            meta["routers"][router.pk] = bool(route.get("active"))
+            if route.get("active"):
+                core_ids.add(router.pk)
+    gateway_assets = {asset.ip: asset for asset in Asset.objects.filter(ip__in=list(gateways))}
+    active_gateways = [ip for ip, meta in gateways.items() if any(meta["routers"].values())]
+    gateways = {
+        ip: meta
+        for ip, meta in gateways.items()
+        if ip in gateway_assets or any(_same_subnet24(ip, active) for active in active_gateways)
+    }
+
+    for router in routers:
+        label = router.name or router.host
+        core = router.pk in core_ids
+        if core:
+            label = f"{label} · ядро"
         data = {
             "id": f"router:{router.pk}",
-            "label": router.name or router.host,
+            "label": label,
             "type": "router",
             "host": router.host,
         }
+        if core:
+            data["core"] = True
         if router.pk in router_site and router_site[router.pk] in {site.pk for site in sites}:
             data["parent"] = f"site:{router_site[router.pk]}"
-        nodes.append({"data": data})
+        node: dict = {"data": data}
+        if core:
+            node["classes"] = "core"
+        nodes.append(node)
 
     for router, segment, interface in router_links:
         if router.pk not in visible_routers:
@@ -290,6 +342,55 @@ def overview_graph(
                 }
             }
         )
+    if gateways:
+        nodes.append({"data": {"id": "edge", "label": "Граница с интернетом", "type": "edge"}})
+        nodes.append(
+            {"data": {"id": "internet", "label": "Интернет", "type": "internet", "parent": "edge"}}
+        )
+        for gateway_ip, meta in sorted(gateways.items()):
+            asset = gateway_assets.get(gateway_ip)
+            label = asset.hostname if asset and asset.hostname else gateway_ip
+            data = {
+                "id": f"gateway:{gateway_ip}",
+                "label": label,
+                "summary": f"{label} · {gateway_ip}",
+                "type": "gateway",
+                "parent": "edge",
+                "ip": gateway_ip,
+            }
+            if asset:
+                data["vendor"] = asset.mac_vendor
+                if asset.segment_id:
+                    data["summary"] += f" · {asset.segment.name}"
+                    data["url"] = f"{reverse('registry:network_map')}?segment={asset.segment_id}"
+            nodes.append({"data": data})
+            is_active = any(meta["routers"].values())
+            edges.append(
+                {
+                    "data": {
+                        "id": f"wan:{gateway_ip}",
+                        "source": "internet",
+                        "target": f"gateway:{gateway_ip}",
+                        "type": "wan",
+                        "label": "активный" if is_active else "резерв",
+                    },
+                    **({} if is_active else {"classes": "standby"}),
+                }
+            )
+            for router_pk, route_active in sorted(meta["routers"].items()):
+                edges.append(
+                    {
+                        "data": {
+                            "id": f"default:{router_pk}:{gateway_ip}",
+                            "source": f"gateway:{gateway_ip}",
+                            "target": f"router:{router_pk}",
+                            "type": "default-route",
+                            "label": "default" if route_active else "резерв",
+                        },
+                        **({} if route_active else {"classes": "standby"}),
+                    }
+                )
+
     for left, right, interface in router_router_links(routers):
         edges.append(
             {

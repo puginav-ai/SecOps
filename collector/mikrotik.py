@@ -97,10 +97,11 @@ def normalized_neighbors(rows: Iterable[Mapping[str, str]]) -> list[dict]:
 
 
 def normalized_routes(rows: Iterable[Mapping[str, str]]) -> list[dict]:
-    """Строки /ip/route → [{dst, gateway, kind}] по активным маршрутам, кроме дефолта.
+    """Строки /ip/route → [{dst, gateway, kind, active}], включая default.
 
-    Маршруты нужны, чтобы видеть сети, которые роутер знает за собой (в т.ч. за NAT/NAT-роутерами
-    соседей): «какие ещё подсети есть в контуре» — SDD §5.10. Дефолт и неактивные пропускаем.
+    default-маршруты (0.0.0.0/0) нужны карте сети: показывают границу с интернетом и
+    шлюзы («Континент» активный/резервный). Неактивные маршруты оставляем с
+    active=False — это резерв HA; отключённые строки пропускаем (SDD §5.10).
     """
 
     def flag(value) -> bool:
@@ -109,10 +110,10 @@ def normalized_routes(rows: Iterable[Mapping[str, str]]) -> list[dict]:
 
     result: list[dict] = []
     for row in rows:
-        if not flag(row.get("active")):
+        if flag(row.get("disabled")):
             continue
         dst = str(row.get("dst-address", "")).strip()
-        if not dst or dst == "0.0.0.0/0":
+        if not dst:
             continue
         try:
             network = ipaddress.ip_network(dst, strict=False)
@@ -129,6 +130,7 @@ def normalized_routes(rows: Iterable[Mapping[str, str]]) -> list[dict]:
                 "dst": str(network),
                 "gateway": str(row.get("gateway", "")).strip(),
                 "kind": kind,
+                "active": flag(row.get("active")),
             }
         )
     return result

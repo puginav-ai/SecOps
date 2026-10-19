@@ -351,6 +351,7 @@ def network_map(request):
         context["graph_types"] = {node["data"]["type"] for node in graph["nodes"]}
         context["graph_edge_types"] = {edge["data"].get("type", "plain") for edge in graph["edges"]}
         context["routers_total"] = RouterDevice.objects.count()
+        context["graph_has_core"] = any(node["data"].get("core") for node in graph["nodes"])
         context["find_query"] = find_query
         context["found"] = found
         context["found_segment_ids"] = found["segment_ids"] if found else []

@@ -160,6 +160,40 @@ def test_map_view_highlights_found_segment(login, make_user, segment: Segment) -
     assert "found" in graph_nodes[f"segment:{segment.pk}"].get("classes", "")
 
 
+def test_overview_draws_internet_border_and_core(site: Site, segment: Segment) -> None:
+    router = RouterDevice.objects.create(
+        host="10.0.0.1",
+        name="MT-Core",
+        addresses=[{"address": "10.70.1.1/24", "interface": "bridge", "network": "10.70.1.0/24"}],
+        routes=[
+            {"dst": "0.0.0.0/0", "gateway": "10.70.9.1", "kind": "static", "active": True},
+            {"dst": "0.0.0.0/0", "gateway": "10.70.9.3", "kind": "static", "active": False},
+        ],
+        last_seen_at=timezone.now(),
+    )
+    gateway_segment = Segment.objects.create(site=site, name="Служебная", cidr="10.70.9.0/24")
+    make_asset(gateway_segment, "10.70.9.1", hostname="Континент-4 (активный)")
+    make_asset(gateway_segment, "10.70.9.3", hostname="Континент-4 (резервный)")
+
+    graph = mapdata.overview_graph()
+
+    nodes = {node["data"]["id"]: node for node in graph["nodes"]}
+    assert nodes["internet"]["data"]["type"] == "internet"
+    assert nodes["gateway:10.70.9.1"]["data"]["parent"] == "edge"
+    assert nodes["gateway:10.70.9.1"]["data"]["label"] == "Континент-4 (активный)"
+    assert "ядро" in nodes[f"router:{router.pk}"]["data"]["label"]
+    assert "core" in nodes[f"router:{router.pk}"].get("classes", "")
+
+    edges = {
+        (edge["data"]["source"], edge["data"]["target"], edge["data"]["label"])
+        for edge in graph["edges"]
+    }
+    assert ("internet", "gateway:10.70.9.1", "активный") in edges
+    assert ("internet", "gateway:10.70.9.3", "резерв") in edges
+    assert ("gateway:10.70.9.1", f"router:{router.pk}", "default") in edges
+    assert ("gateway:10.70.9.3", f"router:{router.pk}", "резерв") in edges
+
+
 def test_segment_graph_links_assets_to_systems(segment: Segment) -> None:
     system = System.objects.create(name="ЛИС-Карта", site=segment.site)
     linked = make_asset(
