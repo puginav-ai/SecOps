@@ -23,8 +23,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options) -> None:
         roles = families = 0
         for asset in Asset.objects.iterator():
-            role = classify_role(asset.ports or [], asset.mac_vendor, asset.hostname)
-            if role != asset.role_auto and (role or not asset.role_auto):
+            role = classify_role(asset.ports or [], asset.mac_vendor, asset.hostname, asset.os_name)
+            if role != asset.role_auto and (role or asset.ports):
                 asset.role_auto = role
                 asset.save(update_fields=["role_auto"])
                 roles += 1

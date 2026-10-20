@@ -106,6 +106,23 @@ def test_os_family_does_not_downgrade_to_generic():
     assert better_os_family("Windows (по портам)", "Windows 10 Pro") == "Windows 10 Pro"
 
 
+def test_server_requires_real_signals():
+    # один порт каталога/SSH/web — ещё не сервер
+    assert classify_role([22]) == ""
+    assert classify_role([23, 80]) == ""
+    assert classify_role([389]) == ""
+    # набор AD-портов или серверная ОС — сервер
+    assert classify_role([53, 88, 389, 445]) == "server"
+    assert classify_role([135, 139, 445, 1433, 3389], os_name="Windows Server 2019") == "server"
+    # Windows 10/11 с локальной MySQL — рабочее место
+    assert (
+        classify_role([135, 139, 445, 3306, 5357, 7070], os_name="Windows 10 Pro 19045")
+        == "workstation"
+    )
+    # почтовый сервер — только с набором почтовых портов
+    assert classify_role([25, 110, 143]) == "server"
+
+
 def test_unknown_stays_empty():
     assert classify_role([]) == ""
     assert classify_role([], vendor="Неизвестный вендор", hostname="host-1") == ""

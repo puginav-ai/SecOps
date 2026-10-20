@@ -114,7 +114,9 @@ def apply_observations(segment: Segment, observations: Sequence[ObservedHost]) -
                 segment=segment,
                 discovery_source=observed.source,
                 ports=list(observed.ports),
-                role_auto=classify_role(observed.ports, vendor, observed.hostname),
+                role_auto=classify_role(
+                    observed.ports, vendor, observed.hostname, observed.os_name
+                ),
                 fingerprint={"services": list(observed.services)} if observed.services else {},
                 software=software_label(observed),
                 last_seen_at=now,
@@ -191,9 +193,17 @@ def _update_asset(
         changes["mac_vendor"] = {"from": asset.mac_vendor, "to": vendor}
 
     effective_hostname = observed.hostname or asset.hostname
-    role_auto = classify_role(ports or asset.ports, vendor or asset.mac_vendor, effective_hostname)
-    if role_auto and role_auto != asset.role_auto:
+    role_auto = classify_role(
+        ports or asset.ports,
+        vendor or asset.mac_vendor,
+        effective_hostname,
+        observed.os_name or asset.os_name,
+    )
+    # Пустая классификация очищает устаревшую авто-роль, если по хосту есть порты:
+    # иначе «сервер» из старых правил (SSH/веб) остаётся навсегда. Без портов — не трогаем.
+    if role_auto != asset.role_auto and (role_auto or asset.ports):
         changes["role_auto"] = {"from": asset.role_auto, "to": role_auto}
+        asset.role_auto = role_auto
 
     services = [dict(item) for item in observed.services]
     if services and services != (asset.fingerprint or {}).get("services", []):
@@ -205,7 +215,6 @@ def _update_asset(
     asset.ip = observed.ip
     asset.mac = mac or asset.mac
     asset.mac_vendor = vendor or asset.mac_vendor
-    asset.role_auto = role_auto or asset.role_auto
     if services:
         asset.fingerprint = {**(asset.fingerprint or {}), "services": services}
         asset.software = software_label(observed)

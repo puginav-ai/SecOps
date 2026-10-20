@@ -16,9 +16,11 @@ NETWORK_PORTS = {161, 162, 8291, 830}  # SNMP, Winbox, NETCONF
 PHONE_PORTS = {5060, 5061}  # SIP
 CAMERA_PORTS = {554, 8554}  # RTSP
 DATABASE_PORTS = {1433, 1521, 3306, 5432, 9200, 27017, 6379}
-# Службы, которых не бывает на рядовом АРМ: AD, почта, БД. Проверяются до Windows-портов,
-# иначе контроллер домена с 445 попадёт в «АРМ».
-SERVER_SIGNAL_PORTS = DATABASE_PORTS | {25, 53, 88, 389, 636, 3268, 3269, 587, 993, 995}
+# Признаки сервера проверяются наборами: один порт каталога/почты ещё не сервер.
+AD_PORTS = {53, 88, 389, 636, 3268, 3269}
+MAIL_PORTS = {25, 587}
+MAIL_READ_PORTS = {110, 143, 993, 995}
+DESKTOP_PORTS = {135, 139, 445, 3389}
 WINDOWS_PORTS = {135, 139, 445, 3389}
 
 PRINTER_VENDORS = (
@@ -160,8 +162,10 @@ def distro_from_services(services: Iterable[dict]) -> str:
     return ""
 
 
-def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") -> str:
-    """Значение Asset.DeviceRole по портам/вендору/имени; "" — недостаточно признаков."""
+def classify_role(
+    ports: Iterable[int], vendor: str = "", hostname: str = "", os_name: str = ""
+) -> str:
+    """Значение Asset.DeviceRole по портам/вендору/имени/ОС; "" — недостаточно признаков."""
     port_set = {int(port) for port in (ports or ()) if str(port).isdigit()}
     vendor_l = (vendor or "").lower()
     name_l = (hostname or "").strip().lower()
@@ -190,9 +194,28 @@ def classify_role(ports: Iterable[int], vendor: str = "", hostname: str = "") ->
     if any(marker in vendor_l for marker in MOBILE_VENDORS):
         return "mobile"
 
-    # AD/БД/почта — сильный признак сервера, проверяем до Windows-портов и веб-морды
-    if port_set & SERVER_SIGNAL_PORTS:
+    # AD/БД/почта: сервер только по набору признаков, а не по одному порту.
+    # Windows 10/11 с 445 и локальной MySQL — рабочее место, а не сервер.
+    os_l = (os_name or "").lower()
+    server_os = "server" in os_l
+    desktop_os = any(
+        marker in os_l for marker in ("windows 7", "windows 8", "windows 10", "windows 11")
+    )
+    desktop_ports = port_set & DESKTOP_PORTS
+    ad_ports = port_set & AD_PORTS
+    mail_ports = port_set & MAIL_PORTS
+    db_ports = port_set & DATABASE_PORTS
+    server_name = bool(re.match(r"^(srv|server|dc\d|db\d|sql|lis|pacs)", name_l))
+
+    if len(ad_ports) >= 2 or server_os:
         return "server"
+    if mail_ports and port_set & MAIL_READ_PORTS:
+        return "server"
+    if db_ports and (not desktop_ports or len(db_ports) >= 2 or server_name):
+        return "server"
+    if desktop_os and desktop_ports:
+        return "workstation"
+
     # Материнская плата/моноблок — рабочее место, даже если открыт SSH или 7070 (АРМ с ПО)
     if any(marker in vendor_l for marker in WORKSTATION_VENDORS):
         return "workstation"
