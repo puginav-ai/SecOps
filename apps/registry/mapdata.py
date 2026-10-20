@@ -75,6 +75,62 @@ def effective_role(asset: Asset) -> str:
     return asset.role_auto or Asset.DeviceRole.UNKNOWN
 
 
+def os_variant(asset: Asset) -> str:
+    """ОС-вариант для иконки АРМ/сервера: windows|astra|redos|ubuntu|linux|""."""
+    text = f"{asset.os_name or ''} {asset.os_family or ''}".lower()
+    if "windows" in text:
+        return "windows"
+    if "astra" in text:
+        return "astra"
+    if "red os" in text or "redos" in text:
+        return "redos"
+    if "ubuntu" in text:
+        return "ubuntu"
+    if any(marker in text for marker in ("linux", "debian", "centos", "almalinux", "rocky")):
+        return "linux"
+    return ""
+
+
+# Подписи и иконки ОС-вариантов (Bootstrap Icons, те же глифы, что в вендорных SVG)
+OS_ICON_LEGEND: dict[tuple[str, str], tuple[str, str]] = {
+    ("server", "windows"): ("bi-server", "сервер · Windows"),
+    ("server", "linux"): ("bi-hdd-rack", "сервер · Linux"),
+    ("server", "astra"): ("bi-hdd-rack", "сервер · Astra Linux"),
+    ("server", "redos"): ("bi-hdd-rack", "сервер · RED OS"),
+    ("server", "ubuntu"): ("bi-hdd-rack", "сервер · Ubuntu"),
+    ("workstation", "windows"): ("bi-windows", "АРМ · Windows"),
+    ("workstation", "astra"): ("bi-pc-display", "АРМ · Astra Linux"),
+    ("workstation", "redos"): ("bi-pc", "АРМ · RED OS"),
+    ("workstation", "ubuntu"): ("bi-ubuntu", "АРМ · Ubuntu"),
+    ("workstation", "linux"): ("bi-display", "АРМ · другая Linux"),
+}
+
+
+def legend_os(assets) -> list[dict]:
+    """Элементы легенды по ОС-вариантам АРМ/серверов, реально присутствующим в выборке.
+
+    Активы без данных об ОС остаются под общим пунктом роли (АРМ/сервер) — их не
+    помечаем «ОС не определена», чтобы не раздувать легенду.
+    """
+    role_order = {"server": 0, "workstation": 1}
+    present = {
+        (effective_role(asset), os_variant(asset))
+        for asset in assets
+        if effective_role(asset) in role_order and os_variant(asset)
+    }
+    return [
+        {
+            "role": role,
+            "icon": OS_ICON_LEGEND[(role, variant)][0],
+            "title": OS_ICON_LEGEND[(role, variant)][1],
+            "color": ROLE_LEGEND[role][1],
+        }
+        for role, variant in sorted(
+            present, key=lambda item: (role_order[item[0]], OS_ICON_LEGEND[item][1])
+        )
+    ]
+
+
 def asset_queryset() -> QuerySet[Asset]:
     """Активы с предвыбранными связями — для графа и таблицы состава."""
     return Asset.objects.select_related("segment", "site").prefetch_related(
@@ -460,6 +516,7 @@ def segment_graph(segment: Segment, assets: list[Asset]) -> dict:
                     "vendor": asset.mac_vendor,
                     "hostname": asset.hostname,
                     "role": effective_role(asset),
+                    "os_variant": os_variant(asset),
                     "role_auto": asset.role_auto,
                     "role_manual": ""
                     if asset.device_role == Asset.DeviceRole.UNKNOWN

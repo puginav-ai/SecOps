@@ -7,7 +7,12 @@
 <style>
   .table { font-variant-numeric: tabular-nums; }
   .map-search-results { max-height: 190px; overflow-y: auto; }
-  .map-scroll { height: 68vh; min-height: 480px; overflow: auto; background: #fff; }
+  .map-scroll {
+    height: 68vh; min-height: 480px;
+    overflow-x: hidden; overflow-y: auto;
+    scrollbar-gutter: stable;
+    background: #fff;
+  }
   #map { width: 100%; height: 100%; }
   .map-tip {
     position: fixed; z-index: 1080; pointer-events: none; white-space: nowrap;
@@ -137,6 +142,9 @@
         </div>
         <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
           {% for item in legend_roles %}
+            <span><i class="bi {{ item.icon }}" style="color:{{ item.color }}"></i> {{ item.title }}</span>
+          {% endfor %}
+          {% for item in legend_os %}
             <span><i class="bi {{ item.icon }}" style="color:{{ item.color }}"></i> {{ item.title }}</span>
           {% endfor %}
           {% if "system" in graph_types %}
@@ -392,6 +400,17 @@
       }
     };
   });
+  // ОС-варианты АРМ/серверов: глиф разный, цвет роли сохраняется
+  const osIcons = {
+    "workstation:windows": "{% static 'vendor/icons/roles/workstation-windows.svg' %}",
+    "workstation:astra": "{% static 'vendor/icons/roles/workstation-astra.svg' %}",
+    "workstation:redos": "{% static 'vendor/icons/roles/workstation-redos.svg' %}",
+    "workstation:ubuntu": "{% static 'vendor/icons/roles/workstation-ubuntu.svg' %}",
+    "server:linux": "{% static 'vendor/icons/roles/server-linux.svg' %}",
+    "server:astra": "{% static 'vendor/icons/roles/server-linux.svg' %}",
+    "server:redos": "{% static 'vendor/icons/roles/server-linux.svg' %}",
+    "server:ubuntu": "{% static 'vendor/icons/roles/server-linux.svg' %}"
+  };
 
   const cy = cytoscape({
     container: document.getElementById("map"),
@@ -469,7 +488,7 @@
           "text-valign": "center", "text-wrap": "none"
       }},
       { selector: 'node[type="asset"]', style: {
-          "width": 36, "height": 36,
+          "width": 36, "height": 36, "shape": "rectangle",
           "text-wrap": "ellipsis", "text-max-width": "72px"
       }},
       { selector: 'node[type="router"].core', style: {
@@ -505,22 +524,25 @@
   // Фиксированный масштаб 1:1: ничего не уменьшаем под экран — карта прокручивается.
   // Раскладка детерминированная, сегменты стоят рядом со своим шлюзом (короткие связи).
   window.secopsMap = cy;
+  // Иконка по паре роль+ОС: Windows/Astra/RED OS/Ubuntu/Linux различаются глифом
+  cy.nodes('[type="asset"]').forEach(function (node) {
+    const data = node.data();
+    const icon = osIcons[data.role + ":" + (data.os_variant || "")];
+    if (icon) { node.style("background-image", "url('" + icon + "')"); }
+  });
   const wrapper = document.getElementById("map-scroll");
 
   function renderCanvas() {
-    const width = Math.max(wrapper.clientWidth - 2, 320);
+    const width = Math.max(wrapper.clientWidth, 320);
     if (cy.$("#segment-root").length) {
       layoutSegment(width);
     } else {
       layoutOverview(width);
     }
-    cy.zoom(1);
-    cy.pan({ x: 0, y: 0 });
     const bbox = cy.elements().boundingBox();
-    const pad = 24;
     const mapEl = document.getElementById("map");
-    mapEl.style.width = Math.ceil(Math.max(bbox.x2 + pad, width)) + "px";
-    mapEl.style.height = Math.ceil(bbox.y2 + pad + 28) + "px";
+    mapEl.style.width = width + "px";
+    mapEl.style.height = Math.ceil(bbox.y2 + 28) + "px";
     cy.resize();
     cy.zoom(1);
     cy.pan({ x: 0, y: 0 });
@@ -591,20 +613,33 @@
     const contentWidth = Math.max(width - PAD * 2, 480);
     // Колонки сегментов в группах: фиксированные размеры, ширина под контейнер
     const cols = Math.max(1, Math.floor((contentWidth - ROUTER_COL + GAP_X) / (SEG_W + GAP_X)));
+    const narrow = width < 760;
     let top = 0;
     // Граница с интернетом — отдельной полосой сверху: облако → шлюзы → ядро
     const edgeBand = cy.nodes('[type="edge"]');
     if (edgeBand.length) {
-      edgeBand.children('[type="internet"]').forEach(function (node) {
-        node.position({ x: PAD + 130, y: top + PAD + 44 });
-      });
-      edgeBand
-        .children('[type="gateway"]')
-        .sort(byLabel)
-        .forEach(function (node, index) {
+      const internet = edgeBand.children('[type="internet"]');
+      const gateways = edgeBand.children('[type="gateway"]').sort(byLabel);
+      // Ширина полосы фиксированная: на узком экране шлюзы встают столбиком,
+      // чтобы не появлялась горизонтальная прокрутка
+      const horizontalFit = PAD + 360 + gateways.length * 230 <= width;
+      if (horizontalFit) {
+        internet.forEach(function (node) {
+          node.position({ x: PAD + 130, y: top + PAD + 44 });
+        });
+        gateways.forEach(function (node, index) {
           node.position({ x: PAD + 360 + index * 230, y: top + PAD + 44 });
         });
-      top += PAD + 88 + PAD + SITE_GAP + 28;
+        top += PAD + 88 + PAD + SITE_GAP + 28;
+      } else {
+        internet.forEach(function (node) {
+          node.position({ x: PAD + 80, y: top + PAD + 40 });
+        });
+        gateways.forEach(function (node, index) {
+          node.position({ x: PAD + 300, y: top + PAD + 40 + index * 64 });
+        });
+        top += PAD + 40 + Math.max(1, gateways.length) * 64 + PAD + SITE_GAP;
+      }
     }
     cy.nodes('[type="site"]').forEach(function (site) {
       const routers = site.children('[type="router"]').sort(byLabel);
@@ -637,22 +672,43 @@
         return aName < bName ? -1 : 1;
       });
       let y = top + PAD + 28;  // место под подпись площадки
-      groups.forEach(function (group) {
-        const count = group.segments.length;
-        const rows = Math.max(1, Math.ceil(count / cols));
-        const blockH = Math.max(ROUTER_H, rows * (SEG_H + GAP_Y) - GAP_Y);
-        // Роутер — в левой колонке своей группы: связи до сегментов короткие
-        if (group.router) {
-          group.router.position({ x: PAD + ROUTER_COL / 2, y: y + blockH / 2 });
-        }
-        group.segments.forEach(function (node, index) {
-          node.position({
-            x: PAD + ROUTER_COL + (index % cols) * (SEG_W + GAP_X) + SEG_W / 2,
-            y: y + Math.floor(index / cols) * (SEG_H + GAP_Y) + SEG_H / 2
+      if (narrow) {
+        // Узкий экран: роутер над своей группой, сегменты — сеткой во всю ширину
+        const narrowCols = Math.max(
+          1, Math.floor((width - 2 * PAD + GAP_X) / (SEG_W + GAP_X))
+        );
+        groups.forEach(function (group) {
+          if (group.router) {
+            group.router.position({ x: PAD + 100, y: y + 24 });
+          }
+          const startY = y + (group.router ? 56 : 8);
+          group.segments.forEach(function (node, index) {
+            node.position({
+              x: PAD + (index % narrowCols) * (SEG_W + GAP_X) + SEG_W / 2,
+              y: startY + Math.floor(index / narrowCols) * (SEG_H + GAP_Y) + SEG_H / 2
+            });
           });
+          const rows = Math.max(1, Math.ceil(group.segments.length / narrowCols));
+          y = startY + rows * (SEG_H + GAP_Y) + GROUP_GAP;
         });
-        y += blockH + GROUP_GAP;
-      });
+      } else {
+        groups.forEach(function (group) {
+          const count = group.segments.length;
+          const rows = Math.max(1, Math.ceil(count / cols));
+          const blockH = Math.max(ROUTER_H, rows * (SEG_H + GAP_Y) - GAP_Y);
+          // Роутер — в левой колонке своей группы: связи до сегментов короткие
+          if (group.router) {
+            group.router.position({ x: PAD + ROUTER_COL / 2, y: y + blockH / 2 });
+          }
+          group.segments.forEach(function (node, index) {
+            node.position({
+              x: PAD + ROUTER_COL + (index % cols) * (SEG_W + GAP_X) + SEG_W / 2,
+              y: y + Math.floor(index / cols) * (SEG_H + GAP_Y) + SEG_H / 2
+            });
+          });
+          y += blockH + GROUP_GAP;
+        });
+      }
       top = y + PAD + SITE_GAP;
     });
     // Узлы без площадки — отдельным блоком снизу (в норме таких нет)
@@ -685,6 +741,7 @@
     const parts = [data.label];
     if (data.ip && data.label !== data.ip) parts.push(data.ip);
     if (data.role && data.role !== "unknown") parts.push(roleTitles[data.role] || data.role);
+    if (data.os) parts.push(data.os);
     return parts.join(" · ");
   }
   cy.on("mouseover", 'node[type="asset"], node[type="segment"], node[type="gateway"]', function (event) {

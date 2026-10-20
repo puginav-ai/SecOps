@@ -254,6 +254,41 @@ def test_overview_draws_internet_border_and_core(site: Site, segment: Segment) -
     assert ("gateway:10.70.9.3", f"router:{router.pk}", "резерв") in edges
 
 
+def test_os_variant_and_icon_legend(segment: Segment) -> None:
+    workstation_win = make_asset(
+        segment, "10.70.1.10", role_auto="workstation", os_name="Windows 10 Pro"
+    )
+    workstation_astra = make_asset(
+        segment, "10.70.1.11", role_auto="workstation", os_family="Astra Linux"
+    )
+    workstation_redos = make_asset(
+        segment, "10.70.1.12", role_auto="workstation", os_family="RED OS"
+    )
+    server_linux = make_asset(
+        segment, "10.70.1.13", role_auto="server", os_family="Linux/Unix (по портам)"
+    )
+
+    assert mapdata.os_variant(workstation_win) == "windows"
+    assert mapdata.os_variant(workstation_astra) == "astra"
+    assert mapdata.os_variant(workstation_redos) == "redos"
+    assert mapdata.os_variant(server_linux) == "linux"
+
+    graph = mapdata.segment_graph(segment, list(mapdata.asset_queryset().filter(segment=segment)))
+    nodes = {node["data"]["id"]: node["data"] for node in graph["nodes"]}
+    assert nodes[f"asset:{workstation_win.pk}"]["os_variant"] == "windows"
+
+    titles = [
+        item["title"]
+        for item in mapdata.legend_os(
+            [workstation_win, workstation_astra, workstation_redos, server_linux]
+        )
+    ]
+    assert "АРМ · Windows" in titles
+    assert "АРМ · Astra Linux" in titles
+    assert "АРМ · RED OS" in titles
+    assert "сервер · Linux" in titles
+
+
 def test_segment_graph_links_assets_to_systems(segment: Segment) -> None:
     system = System.objects.create(name="ЛИС-Карта", site=segment.site)
     linked = make_asset(

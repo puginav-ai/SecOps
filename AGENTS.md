@@ -52,6 +52,20 @@ make backup    # pg_dump + снапшот S3 (ops/)
 Существенная фича или решение → сначала правка `docs/SDD.md` (или ADR-заметка в нём), потом код.
 Рабочие решения фиксируем в SDD, а не в переписке.
 
+## Фронтенд-правки: обязательный пайплайн
+
+Перед любым изменением UI (карта, таблицы, формы, навигация):
+
+1. Загрузить скиллы `web-interface-guidelines` и `frontend-design-audit` (для вкуса —
+   `frontend-design`) и свериться с их MUST-пунктами.
+2. Проверить макет на 1600 / 1280 / 1024 / 768 px: `document.documentElement.scrollWidth <= innerWidth`
+   и для контейнеров карт `scrollWidth <= clientWidth`. **Горизонтальная прокрутка запрещена**
+   (`web-interface-guidelines`: «Avoid unwanted scrollbars; fix overflows»).
+3. Сверить: видимый фокус, хит-зоны ≥24 px, контраст ≥4.5:1, подписи не налезают
+   (ellipsis + подсказка), состояния empty/error/loading, состояние в URL.
+4. Приложить скриншоты и результаты замеров; затем `make verify` и `make e2e`.
+5. Если меняется поведение — записать решение в `docs/SDD.md`.
+
 ---
 
 ## Ponytail — компактный набор правил (ленивый сеньор)

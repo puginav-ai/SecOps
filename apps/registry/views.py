@@ -365,12 +365,20 @@ def network_map(request):
     ordered = assets.order_by(*ASSET_SORTS[sort])
     graph_assets = list(ordered[:GRAPH_NODE_LIMIT])
     graph = mapdata.segment_graph(segment, graph_assets)
+    legend_roles = mapdata.legend_roles(graph_assets)
+    legend_os = mapdata.legend_os(graph_assets)
+    if legend_os:
+        # Иконки роли различаются по ОС — общий пункт роли убираем, только если
+        # варианты ОС действительно есть (иначе оставляем АРМ/сервер как раньше)
+        roles_with_os = {item["role"] for item in legend_os}
+        legend_roles = [item for item in legend_roles if item["code"] not in roles_with_os]
     context.update(
         {
             "graph": graph,
             "graph_types": {node["data"]["type"] for node in graph["nodes"]},
             "graph_edge_types": {edge["data"].get("type", "plain") for edge in graph["edges"]},
-            "legend_roles": mapdata.legend_roles(graph_assets),
+            "legend_roles": legend_roles,
+            "legend_os": legend_os,
             "legend_quiet": any(asset.miss_count >= MISS_THRESHOLD for asset in graph_assets),
             "graph_total": assets.count(),
             "graph_shown": len(graph_assets),
