@@ -121,6 +121,9 @@ class Asset(models.Model):
         MANUAL = "manual", "вручную"
 
     ip = models.GenericIPAddressField("IP", protocol="IPv4", db_index=True)
+    extra_ips = models.JSONField(
+        "другие IP", default=list, blank=True, help_text="Второй IP того же MAC (multi-homed)"
+    )
     # shortcut: IP не уникален — после переиспользования IP в истории остаются закрытый
     # и новый актив; «активный» = miss_count < MISS_THRESHOLD. При нескольких воркерах
     # скана — partial unique index.

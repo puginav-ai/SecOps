@@ -432,6 +432,7 @@ def segment_graph(segment: Segment, assets: list[Asset]) -> dict:
                     "parent": "segment-root",
                     "type": "asset",
                     "ip": asset.ip,
+                    "extra_ips": asset.extra_ips or [],
                     "mac": asset.mac,
                     "vendor": asset.mac_vendor,
                     "hostname": asset.hostname,
@@ -651,7 +652,11 @@ def search_map(query: str) -> dict:
                 network = None
 
     if ip is not None:
-        assets = list(Asset.objects.select_related("segment").filter(ip=str(ip))[:20])
+        assets = list(
+            Asset.objects.select_related("segment").filter(
+                Q(ip=str(ip)) | Q(extra_ips__contains=[str(ip)])
+            )[:20]
+        )
         if assets:
             match = "ip"
     elif network is not None:

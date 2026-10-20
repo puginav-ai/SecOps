@@ -7,6 +7,7 @@ MAC-first идентичность: устройство «переезжает�
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -161,7 +162,6 @@ def _update_asset(
     """Обновляет поля актива; возвращает (изменения для changed, сменились ли порты)."""
     changes: dict = {}
     for field, old, new in (
-        ("ip", asset.ip, observed.ip),
         ("mac", asset.mac, mac),
         ("hostname", asset.hostname, observed.hostname),
         ("os_name", asset.os_name, observed.os_name),
@@ -169,10 +169,25 @@ def _update_asset(
         if new and old != new:
             changes[field] = {"from": old, "to": new}
 
-    if asset.segment_id != segment.pk:
+    # Один MAC может иметь несколько IP (multi-homed). Новый IP — обычный дрейф/DHCP:
+    # следуем за MAC, старый сохраняем в extra_ips. Если же пришёл IP, уже известный как
+    # дополнительный, основной адрес не меняем — иначе актив «мигал» бы между VLAN.
+    primary_ip = asset.ip
+    extra_ips = sorted(
+        {value for value in (asset.extra_ips or []) if value}, key=ipaddress.ip_address
+    )
+    asset_segment = asset.segment
+    if observed.ip != asset.ip and observed.ip not in extra_ips:
+        known = {asset.ip, observed.ip, *extra_ips}
+        extra_ips = sorted(known - {observed.ip}, key=ipaddress.ip_address)
+        changes["ip"] = {"from": asset.ip, "to": observed.ip}
+        changes["extra_ips"] = {"from": asset.extra_ips or [], "to": extra_ips}
+        primary_ip = observed.ip
+        asset_segment = segment
+    if asset_segment is not None and asset.segment_id != asset_segment.pk:
         changes["segment"] = {
             "from": asset.segment.name if asset.segment else None,
-            "to": segment.name,
+            "to": asset_segment.name,
         }
 
     ports = list(observed.ports)
@@ -212,7 +227,8 @@ def _update_asset(
             "to": services,
         }
 
-    asset.ip = observed.ip
+    asset.ip = primary_ip
+    asset.extra_ips = extra_ips
     asset.mac = mac or asset.mac
     asset.mac_vendor = vendor or asset.mac_vendor
     if services:
@@ -230,8 +246,8 @@ def _update_asset(
         if os_family and os_family != asset.os_family:
             changes["os_family"] = {"from": asset.os_family, "to": os_family}
             asset.os_family = os_family
-    asset.site = segment.site
-    asset.segment = segment
+    asset.site = asset_segment.site if asset_segment else asset.site
+    asset.segment = asset_segment
     asset.last_seen_at = now
     asset.miss_count = 0
     asset.save()

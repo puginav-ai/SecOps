@@ -142,6 +142,14 @@ def test_search_map_by_vendor(segment: Segment) -> None:
     assert [asset.ip for asset in found["assets"]] == ["10.70.1.10"]
 
 
+def test_search_map_finds_secondary_ip(segment: Segment) -> None:
+    asset = make_asset(segment, "10.70.1.10", extra_ips=["10.70.9.10"])
+
+    found = mapdata.search_map("10.70.9.10")
+
+    assert [item.pk for item in found["assets"]] == [asset.pk]
+
+
 def test_search_map_by_role_keyword(segment: Segment) -> None:
     make_asset(segment, "10.70.1.20", role_auto="printer", hostname="prn-1")
     make_asset(segment, "10.70.1.21", role_auto="workstation")

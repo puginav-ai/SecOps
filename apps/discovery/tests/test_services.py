@@ -74,9 +74,9 @@ def test_mac_first_identity_follows_ip_change(segment: Segment) -> None:
 
     asset = Asset.objects.get()
     assert asset.ip == "10.60.1.50"
-    assert AssetEvent.objects.get(kind=AssetEvent.Kind.CHANGED).details == {
-        "ip": {"from": "10.60.1.10", "to": "10.60.1.50"}
-    }
+    details = AssetEvent.objects.get(kind=AssetEvent.Kind.CHANGED).details
+    assert details["ip"] == {"from": "10.60.1.10", "to": "10.60.1.50"}
+    assert details["extra_ips"]["to"] == ["10.60.1.10"]
 
 
 def test_ip_reuse_closes_old_asset_and_creates_new(segment: Segment) -> None:
@@ -239,6 +239,21 @@ def test_ssh_banner_sets_linux_distro(segment: Segment) -> None:
     )
 
     assert Asset.objects.get(ip="10.60.1.40").os_family == "Astra Linux"
+
+
+def test_multi_homed_device_keeps_secondary_ip(segment: Segment) -> None:
+    services.apply_observations(segment, [host("10.60.1.20", mac=MAC_A, hostname="sql")])
+    services.apply_observations(segment, [host("10.60.1.10", mac=MAC_A)])
+
+    asset = Asset.objects.get(mac=MAC_A)
+    assert asset.ip == "10.60.1.10"
+    assert asset.extra_ips == ["10.60.1.20"]
+
+    # вернулись на известный дополнительный IP — основной не меняется (нет мигания)
+    services.apply_observations(segment, [host("10.60.1.20", mac=MAC_A)])
+    asset.refresh_from_db()
+    assert asset.ip == "10.60.1.10"
+    assert asset.extra_ips == ["10.60.1.20"]
 
 
 def test_passport_update_is_recorded_as_change(segment: Segment) -> None:

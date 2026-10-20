@@ -189,7 +189,9 @@
       <tbody>
         {% for a in assets %}
           <tr>
-            <td class="text-nowrap">{{ a.ip }}</td>
+            <td class="text-nowrap">{{ a.ip }}
+              {% if a.extra_ips %}<div class="small text-secondary">{{ a.extra_ips|join:", " }}</div>{% endif %}
+            </td>
             <td class="small">{{ a.mac|default:"—" }}<br><span class="text-secondary">{{ a.mac_vendor|default:"" }}</span></td>
             <td>{{ a.hostname|default:"—" }}</td>
             <td>
@@ -402,7 +404,7 @@
     elements: graph.nodes.concat(graph.edges),
     wheelSensitivity: 0.2,
     minZoom: 0.2,
-    maxZoom: 1.5,
+    maxZoom: 2.0,
     style: [
       { selector: "node", style: {
           "label": "data(label)", "font-size": 9, "color": "#343a40",
@@ -468,7 +470,10 @@
           "width": "label", "height": 22, "padding": "5px", "font-size": 9,
           "text-valign": "center", "text-wrap": "none"
       }},
-      { selector: 'node[type="asset"]', style: { "width": 36, "height": 36 }},
+      { selector: 'node[type="asset"]', style: {
+          "width": 36, "height": 36,
+          "text-wrap": "ellipsis", "text-max-width": "72px"
+      }},
       { selector: 'node[type="router"].core', style: {
           "border-width": 3, "border-color": "#212529"
       }},
@@ -523,7 +528,7 @@
   // Подписи активов прячем на мелком зуме: при сотне узлов подписи превращаются в наложения.
   // Имя устройства доступно во всплывающей подсказке и в паспорте по клику.
   function refreshLabels() {
-    const hide = cy.zoom() < 1.25;
+    const hide = cy.zoom() < 0.9;
     cy.nodes('[type="asset"]').toggleClass("hide-label", hide);
   }
 
@@ -546,8 +551,8 @@
   }
 
   function layoutSegment() {
-    const cellW = 52;
-    const cellH = 52;
+    const cellW = 76;
+    const cellH = 64;
     // Группировка по типу устройства (как в легенде), внутри типа — по IP
     const roleOrder = [
       "network", "ap", "server", "workstation", "printer",
@@ -716,7 +721,8 @@
       ? roleTitles[data.role_manual] + " (ручная)"
       : (roleTitles[data.role] || "—") + (data.role !== "unknown" ? " (авто)" : "");
     const rows = [
-      ["IP", data.ip], ["MAC", data.mac], ["Вендор", data.vendor], ["Имя", data.hostname],
+      ["IP", data.ip], ["Другие IP", (data.extra_ips || []).join(", ")], ["MAC", data.mac],
+      ["Вендор", data.vendor], ["Имя", data.hostname],
       ["Тип", role], ["ОС", data.os], ["Порты", ports], ["Службы / ПО", services],
       ["ИС", (data.systems || []).join(", ")], ["Последний отклик", data.last_seen],
       ["Статус", data.status === "active" ? "в сети" : "молчит"],
