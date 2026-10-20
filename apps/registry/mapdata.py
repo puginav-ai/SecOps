@@ -84,8 +84,12 @@ def asset_queryset() -> QuerySet[Asset]:
 
 def router_segment_links(
     segments: list[Segment] | None = None,
-) -> list[tuple[RouterDevice, Segment, str]]:
-    """Рёбра «роутер—сегмент»: интерфейсный адрес роутера лежит внутри CIDR сегмента."""
+) -> list[tuple[RouterDevice, Segment, str, str]]:
+    """Рёбра «роутер—сегмент»: интерфейсный адрес роутера лежит внутри CIDR сегмента.
+
+    Возвращает и IP интерфейса: по нему выбирается основной шлюз сегмента (минимальный),
+    остальные связи на обзорной схеме не рисуем — меньше длинных пересекающихся линий.
+    """
     if segments is None:
         segments = list(Segment.objects.all())
     networks = []
@@ -94,7 +98,7 @@ def router_segment_links(
             networks.append((segment, ipaddress.ip_network(segment.cidr, strict=False)))
         except ValueError:  # невалидный CIDR не должен ломать карту
             continue
-    links: list[tuple[RouterDevice, Segment, str]] = []
+    links: list[tuple[RouterDevice, Segment, str, str]] = []
     seen: set[tuple[int, int]] = set()
     for router in RouterDevice.objects.all():
         for item in router.addresses or []:
@@ -107,7 +111,7 @@ def router_segment_links(
                 if key in seen or ip not in network:
                     continue
                 seen.add(key)
-                links.append((router, segment, str(item.get("interface", ""))))
+                links.append((router, segment, str(item.get("interface", "")), str(ip)))
     return links
 
 
@@ -227,6 +231,15 @@ def overview_graph(
             }
         )
 
+    router_links = router_segment_links(visible_segments)
+    # Основной шлюз сегмента — роутер с минимальным интерфейсным IP (обычно .1).
+    # Рисуем только его связь: остальные — дублирующие и превращают схему в паутину.
+    primary_links: dict[int, tuple[RouterDevice, Segment, str, str]] = {}
+    for link in router_links:
+        current = primary_links.get(link[1].pk)
+        if current is None or ipaddress.ip_address(link[3]) < ipaddress.ip_address(current[3]):
+            primary_links[link[1].pk] = link
+
     for segment in visible_segments:
         total = segment.asset_total or 0
         tile_w, tile_h, font_size, compact = segment_tile(total, sized)
@@ -250,6 +263,9 @@ def overview_graph(
             data["found"] = True
         if segment.site_id:
             data["parent"] = f"site:{segment.site_id}"
+        primary = primary_links.get(segment.pk)
+        if primary is not None:
+            data["primary_router"] = f"router:{primary[0].pk}"
         classes = []
         if sized and total == 0:
             classes.append("empty")
@@ -261,8 +277,15 @@ def overview_graph(
         nodes.append(node)
 
     router_links = router_segment_links(visible_segments)
+    # Основной шлюз сегмента — роутер с минимальным интерфейсным IP (обычно .1).
+    # Рисуем только его связь: остальные — дублирующие и превращают схему в паутину.
+    primary_links: dict[int, tuple[RouterDevice, Segment, str, str]] = {}
+    for link in router_links:
+        current = primary_links.get(link[1].pk)
+        if current is None or ipaddress.ip_address(link[3]) < ipaddress.ip_address(current[3]):
+            primary_links[link[1].pk] = link
     votes: dict[int, dict[int, int]] = {}
-    for router, segment, _interface in router_links:
+    for router, segment, _interface, _ip in router_links:
         if segment.site_id:
             by_site = votes.setdefault(router.pk, {})
             by_site[segment.site_id] = by_site.get(segment.site_id, 0) + 1
@@ -328,7 +351,7 @@ def overview_graph(
             node["classes"] = "core"
         nodes.append(node)
 
-    for router, segment, interface in router_links:
+    for router, segment, interface, _ip in primary_links.values():
         if router.pk not in visible_routers:
             continue
         edges.append(

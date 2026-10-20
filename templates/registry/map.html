@@ -7,6 +7,8 @@
 <style>
   .table { font-variant-numeric: tabular-nums; }
   .map-search-results { max-height: 190px; overflow-y: auto; }
+  .map-scroll { height: 68vh; min-height: 480px; overflow: auto; background: #fff; }
+  #map { width: 100%; height: 100%; }
   .map-tip {
     position: fixed; z-index: 1080; pointer-events: none; white-space: nowrap;
     padding: .25rem .5rem; border-radius: .375rem; font-size: .75rem; line-height: 1.3;
@@ -119,11 +121,6 @@
               {{ segment.site }} · <code>{{ segment.cidr }}</code>
               {% if segment.vlan %} · VLAN {{ segment.vlan }}{% endif %}
             </span>
-            <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Масштаб карты">
-              <button type="button" class="btn btn-outline-secondary" data-map-zoom="out" title="Уменьшить" aria-label="Уменьшить">−</button>
-              <button type="button" class="btn btn-outline-secondary" data-map-zoom="in" title="Увеличить" aria-label="Увеличить">+</button>
-              <button type="button" class="btn btn-outline-secondary" data-map-zoom="fit" title="Вписать в окно" aria-label="Вписать в окно">Вписать</button>
-            </div>
           </div>
           <div class="small text-secondary mt-1">
             активов {{ assets_total }} · в сети {{ active_total }} · молчит {{ quiet_total }}
@@ -133,9 +130,10 @@
           </div>
         </div>
         <div class="card-body p-0">
-          <div id="map" style="height: 62vh; min-height: 420px;"
-               role="img"
-               aria-label="Схема сегмента: {{ assets_total }} активов; полный список — в таблице «Состав сегмента» ниже."></div>
+          <div class="map-scroll" id="map-scroll">
+            <div id="map" role="img"
+                 aria-label="Схема сегмента: {{ assets_total }} активов; полный список — в таблице «Состав сегмента» ниже."></div>
+          </div>
         </div>
         <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
           {% for item in legend_roles %}
@@ -234,11 +232,6 @@
         <span class="text-secondary small">
           площадки → роутеры → сегменты · роутеров {{ routers_total }}, сегментов {{ segments|length }}
         </span>
-        <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Масштаб карты">
-          <button type="button" class="btn btn-outline-secondary" data-map-zoom="out" title="Уменьшить" aria-label="Уменьшить">−</button>
-          <button type="button" class="btn btn-outline-secondary" data-map-zoom="in" title="Увеличить" aria-label="Увеличить">+</button>
-          <button type="button" class="btn btn-outline-secondary" data-map-zoom="fit" title="Вписать в окно" aria-label="Вписать в окно">Вписать</button>
-        </div>
       </div>
       <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
         <form method="get" class="d-flex gap-2" role="search">
@@ -308,9 +301,10 @@
       {% endif %}
     </div>
     <div class="card-body p-0">
-      <div id="map" style="height: 68vh; min-height: 500px;"
-           role="img"
-           aria-label="Схема сети: площадки, роутеры и сегменты; список сегментов — карточками ниже."></div>
+      <div class="map-scroll" id="map-scroll">
+        <div id="map" role="img"
+             aria-label="Схема сети: площадки, роутеры и сегменты; список сегментов — карточками ниже."></div>
+      </div>
     </div>
     <div class="card-footer py-2 small text-secondary d-flex flex-wrap gap-3 align-items-center">
       {% if "router" in graph_types %}
@@ -403,8 +397,12 @@
     container: document.getElementById("map"),
     elements: graph.nodes.concat(graph.edges),
     wheelSensitivity: 0.2,
-    minZoom: 0.2,
-    maxZoom: 2.0,
+    minZoom: 1,
+    maxZoom: 1,
+    userZoomingEnabled: false,
+    userPanningEnabled: false,
+    boxSelectionEnabled: false,
+    autoungrabify: true,
     style: [
       { selector: "node", style: {
           "label": "data(label)", "font-size": 9, "color": "#343a40",
@@ -501,58 +499,55 @@
           "text-background-padding": "1px"
       }},
       { selector: "edge.standby", style: { "line-style": "dashed", "opacity": 0.55 }},
-      { selector: "node.hide-label", style: { "text-opacity": 0 }},
     ].concat(roleSelectors),
   });
 
-  // Отладочный хук: живой инстанс графа (используется в e2e-проверках и при разборе стилей)
+  // Фиксированный масштаб 1:1: ничего не уменьшаем под экран — карта прокручивается.
+  // Раскладка детерминированная, сегменты стоят рядом со своим шлюзом (короткие связи).
   window.secopsMap = cy;
+  const wrapper = document.getElementById("map-scroll");
 
-  // Раскладка детерминированная (сетки и ряды), а не force-граф: читаемость важнее «органики»,
-  // а cytoscape cose с compound-узлами разбрасывал содержимое и оставлял пустые области.
-  if (cy.$("#segment-root").length) {
-    layoutSegment();
-  } else {
-    layoutOverview();
-  }
-  cy.layout({ name: "preset", fit: true, padding: 24 }).run();
-  // Найденный поиском сегмент — в центр и с разумным приближением
-  const foundNodes = cy.nodes(".found");
-  if (foundNodes.length) {
-    cy.fit(foundNodes, 140);
-    if (cy.zoom() > cy.maxZoom()) { cy.zoom(cy.maxZoom()); }
-  }
-  refreshLabels();
-  cy.on("zoom", refreshLabels);
-
-  // Подписи активов прячем на мелком зуме: при сотне узлов подписи превращаются в наложения.
-  // Имя устройства доступно во всплывающей подсказке и в паспорте по клику.
-  function refreshLabels() {
-    const hide = cy.zoom() < 0.9;
-    cy.nodes('[type="asset"]').toggleClass("hide-label", hide);
-  }
-
-  // Колонок столько, чтобы сетка лучше всего уложилась в пропорции контейнера:
-  // максимизируем масштаб (и, значит, размер шрифта), а не оставляем пустые поля
-  function bestColumns(count, cellW, cellH) {
-    const width = Math.max(cy.width() - 64, 200);
-    const height = Math.max(cy.height() - 64, 200);
-    let best = 1;
-    let bestZoom = 0;
-    for (let cols = 1; cols <= count; cols++) {
-      const rows = Math.ceil(count / cols);
-      const zoom = Math.min(width / (cols * cellW), height / (rows * cellH));
-      if (zoom > bestZoom) {
-        bestZoom = zoom;
-        best = cols;
-      }
+  function renderCanvas() {
+    const width = Math.max(wrapper.clientWidth - 2, 320);
+    if (cy.$("#segment-root").length) {
+      layoutSegment(width);
+    } else {
+      layoutOverview(width);
     }
-    return best;
+    cy.zoom(1);
+    cy.pan({ x: 0, y: 0 });
+    const bbox = cy.elements().boundingBox();
+    const pad = 24;
+    const mapEl = document.getElementById("map");
+    mapEl.style.width = Math.ceil(Math.max(bbox.x2 + pad, width)) + "px";
+    mapEl.style.height = Math.ceil(bbox.y2 + pad + 28) + "px";
+    cy.resize();
+    cy.zoom(1);
+    cy.pan({ x: 0, y: 0 });
+    scrollToFound();
   }
 
-  function layoutSegment() {
+  let resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(renderCanvas, 200);
+  });
+
+  function scrollToFound() {
+    const found = cy.nodes(".found");
+    if (!found.length) return;
+    const pos = found[0].renderedPosition();
+    wrapper.scrollTo({
+      top: Math.max(0, pos.y - wrapper.clientHeight / 3),
+      left: Math.max(0, pos.x - wrapper.clientWidth / 2),
+      behavior: "smooth"
+    });
+  }
+
+  function layoutSegment(width) {
     const cellW = 76;
     const cellH = 64;
+    const PAD = 24;
     // Группировка по типу устройства (как в легенде), внутри типа — по IP
     const roleOrder = [
       "network", "ap", "server", "workstation", "printer",
@@ -566,31 +561,38 @@
       if (rank(a) !== rank(b)) return rank(a) - rank(b);
       return a.data("ip") < b.data("ip") ? -1 : 1;
     });
-    const cols = bestColumns(Math.max(assets.length, 1), cellW, cellH);
+    const available = Math.max(width - PAD * 2, 240);
+    const cols = Math.max(1, Math.min(Math.max(assets.length, 1), Math.floor(available / cellW)));
     assets.forEach(function (node, index) {
-      node.position({ x: (index % cols) * cellW, y: Math.floor(index / cols) * cellH });
+      node.position({
+        x: PAD + (index % cols) * cellW + cellW / 2,
+        y: PAD + Math.floor(index / cols) * cellH + cellH / 2
+      });
     });
     const systems = cy.nodes('[type="system"]');
     systems.forEach(function (node, index) {
-      node.position({ x: cols * cellW + 150, y: index * 64 });
+      node.position({ x: PAD + cols * cellW + 160, y: PAD + index * 64 });
     });
   }
 
-  function layoutOverview() {
-    const ROUTER_W = 156;
-    const ROUTER_H = 66;
+  function layoutOverview(width) {
     const PAD = 24;
     const SITE_GAP = 36;
+    const GROUP_GAP = 24;
+    const ROUTER_COL = 200;
+    const ROUTER_H = 64;
+    const SEG_W = 200;
+    const SEG_H = 48;
     const GAP_X = 10;
     const GAP_Y = 10;
     const byLabel = function (a, b) {
       return a.data("label") < b.data("label") ? -1 : 1;
     };
-    // Плитки разной ширины (по наполненности) — раскладываем «потоком» с переносом;
-    // наполненные сегменты первыми, пустые чипы уходят в конец
-    const rowWidth = Math.max(cy.width() - 2 * PAD - 40, 480);
+    const contentWidth = Math.max(width - PAD * 2, 480);
+    // Колонки сегментов в группах: фиксированные размеры, ширина под контейнер
+    const cols = Math.max(1, Math.floor((contentWidth - ROUTER_COL + GAP_X) / (SEG_W + GAP_X)));
     let top = 0;
-    // Граница с интернетом — отдельной полосой сверху: облако → шлюзы («Континент») → ядро
+    // Граница с интернетом — отдельной полосой сверху: облако → шлюзы → ядро
     const edgeBand = cy.nodes('[type="edge"]');
     if (edgeBand.length) {
       edgeBand.children('[type="internet"]').forEach(function (node) {
@@ -606,42 +608,65 @@
     }
     cy.nodes('[type="site"]').forEach(function (site) {
       const routers = site.children('[type="router"]').sort(byLabel);
-      const segments = site.children('[type="segment"]').sort(function (a, b) {
-        const diff = (b.data("asset_total") || 0) - (a.data("asset_total") || 0);
-        return diff !== 0 ? diff : byLabel(a, b);
+      const byRouter = new Map();
+      routers.forEach(function (router) {
+        byRouter.set(router.id(), []);
       });
-      routers.forEach(function (node, index) {
-        node.position({ x: PAD + index * ROUTER_W, y: top + PAD + 8 });
-      });
-      // Роутеры — отдельным рядом над сегментами: связи остаются короткими и не пересекают
-      // всю схему (иначе обзор превращается в «паутину»)
-      const segmentsTop = top + PAD + (routers.length ? ROUTER_H : 4);
-      let x = PAD;
-      let y = segmentsTop;
-      let rowH = 0;
-      segments.forEach(function (node) {
-        const w = node.data("tile_w") || 200;
-        const h = node.data("tile_h") || 48;
-        if (x > PAD && x + w > PAD + rowWidth) {
-          x = PAD;
-          y += rowH + GAP_Y;
-          rowH = 0;
+      const unassigned = [];
+      site.children('[type="segment"]').forEach(function (segment) {
+        const routerId = segment.data("primary_router");
+        if (routerId && byRouter.has(routerId)) {
+          byRouter.get(routerId).push(segment);
+        } else {
+          unassigned.push(segment);
         }
-        node.position({ x: x + w / 2, y: y + h / 2 });
-        x += w + GAP_X;
-        rowH = Math.max(rowH, h);
       });
-      top = y + Math.max(rowH, 1) + PAD + SITE_GAP;
+      const groups = routers.map(function (router) {
+        return { router: router, segments: byRouter.get(router.id()).sort(byLabel) };
+      });
+      if (unassigned.length) {
+        groups.push({ router: null, segments: unassigned.sort(byLabel) });
+      }
+      // Крупные группы — выше: пустые роутеры не отодвигают основную сетку вниз
+      groups.sort(function (a, b) {
+        if (a.segments.length !== b.segments.length) {
+          return b.segments.length - a.segments.length;
+        }
+        const aName = a.router ? a.router.data("label") : "я";
+        const bName = b.router ? b.router.data("label") : "я";
+        return aName < bName ? -1 : 1;
+      });
+      let y = top + PAD + 28;  // место под подпись площадки
+      groups.forEach(function (group) {
+        const count = group.segments.length;
+        const rows = Math.max(1, Math.ceil(count / cols));
+        const blockH = Math.max(ROUTER_H, rows * (SEG_H + GAP_Y) - GAP_Y);
+        // Роутер — в левой колонке своей группы: связи до сегментов короткие
+        if (group.router) {
+          group.router.position({ x: PAD + ROUTER_COL / 2, y: y + blockH / 2 });
+        }
+        group.segments.forEach(function (node, index) {
+          node.position({
+            x: PAD + ROUTER_COL + (index % cols) * (SEG_W + GAP_X) + SEG_W / 2,
+            y: y + Math.floor(index / cols) * (SEG_H + GAP_Y) + SEG_H / 2
+          });
+        });
+        y += blockH + GROUP_GAP;
+      });
+      top = y + PAD + SITE_GAP;
     });
     // Узлы без площадки — отдельным блоком снизу (в норме таких нет)
     cy.nodes('[type="segment"], [type="router"]')
       .filter(function (node) { return !node.parent().length; })
       .forEach(function (node, index) {
-        const w = node.data("tile_w") || 200;
-        const h = node.data("tile_h") || 48;
-        node.position({ x: PAD + index * (w + GAP_X) + w / 2, y: top + PAD + h / 2 });
+        node.position({
+          x: PAD + (index % cols) * (SEG_W + GAP_X) + SEG_W / 2,
+          y: top + PAD + Math.floor(index / cols) * (SEG_H + GAP_Y) + SEG_H / 2
+        });
       });
   }
+
+  renderCanvas();
 
   cy.on("tap", "node", function (event) {
     const data = event.target.data();
@@ -683,17 +708,6 @@
   cy.on("mouseout", 'node[type="asset"], node[type="segment"], node[type="gateway"]', function () {
     clearTimeout(tipTimer);
     tip.classList.add("d-none");
-  });
-
-  // Кнопки масштаба в шапке карточки: колесо мыши есть не у всех, «Вписать» возвращает обзор
-  document.querySelectorAll("[data-map-zoom]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      const action = button.dataset.mapZoom;
-      if (action === "fit") { cy.fit(undefined, 24); return; }
-      const factor = action === "in" ? 1.25 : 0.8;
-      const level = Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * factor));
-      cy.zoom({ level: level, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
-    });
   });
 
   // Подписи связей роутеров (интерфейсы) — только при наведении: иначе они налезают друг
