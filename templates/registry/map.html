@@ -363,39 +363,36 @@
 <script>
 (function () {
   const graph = JSON.parse(document.getElementById("graph-data").textContent);
-  const roleColors = {
-    server: "#0b7285", workstation: "#1c7ed6", printer: "#e8590c", network: "#495057",
-    medical: "#c92a2a", phone: "#087f5b", camera: "#7048e8", mobile: "#c2255c",
-    ap: "#0c8599", other: "#868e96", unknown: "#dee2e6"
-  };
   const roleTitles = {
     server: "сервер", workstation: "АРМ", printer: "печать/МФУ", network: "сетевое оборудование",
     medical: "медицинское изделие", phone: "телефон", camera: "видеокамера",
     mobile: "личное устройство", ap: "точка доступа", other: "прочее", unknown: "—"
   };
-  // Иконки на узлах — те же, что в легенде (Bootstrap Icons, вендорные SVG-файлы)
+  // Иконки на узлах — те же глифы и цвета, что в легенде (цветные SVG Bootstrap Icons,
+  // без цветного круга: на маленьком узле круг «съедал» форму глифа)
   const roleIcons = {
-    server: "{% static 'vendor/icons/server.svg' %}",
-    workstation: "{% static 'vendor/icons/display.svg' %}",
-    printer: "{% static 'vendor/icons/printer.svg' %}",
-    network: "{% static 'vendor/icons/hdd-network.svg' %}",
-    medical: "{% static 'vendor/icons/heart-pulse.svg' %}",
-    phone: "{% static 'vendor/icons/telephone.svg' %}",
-    camera: "{% static 'vendor/icons/camera-video.svg' %}",
-    mobile: "{% static 'vendor/icons/phone.svg' %}",
-    ap: "{% static 'vendor/icons/wifi.svg' %}",
-    other: "{% static 'vendor/icons/three-dots.svg' %}",
-    unknown: "{% static 'vendor/icons/question-circle-dark.svg' %}"
+    server: "{% static 'vendor/icons/roles/server.svg' %}",
+    workstation: "{% static 'vendor/icons/roles/workstation.svg' %}",
+    printer: "{% static 'vendor/icons/roles/printer.svg' %}",
+    network: "{% static 'vendor/icons/roles/network.svg' %}",
+    medical: "{% static 'vendor/icons/roles/medical.svg' %}",
+    phone: "{% static 'vendor/icons/roles/phone.svg' %}",
+    camera: "{% static 'vendor/icons/roles/camera.svg' %}",
+    mobile: "{% static 'vendor/icons/roles/mobile.svg' %}",
+    ap: "{% static 'vendor/icons/roles/ap.svg' %}",
+    other: "{% static 'vendor/icons/roles/other.svg' %}",
+    unknown: "{% static 'vendor/icons/roles/unknown.svg' %}"
   };
-  const roleSelectors = Object.keys(roleColors).map(function (role) {
+  const roleSelectors = Object.keys(roleIcons).map(function (role) {
     return {
       selector: 'node[type="asset"][role="' + role + '"]',
       style: {
-        "background-color": roleColors[role],
+        "background-opacity": 0,
         "background-image": "url('" + roleIcons[role] + "')",
         "background-fit": "contain",
-        "background-width": "80%",
-        "background-height": "80%"
+        "background-width": "100%",
+        "background-height": "100%",
+        "border-width": 0
       }
     };
   });
@@ -471,12 +468,12 @@
           "width": "label", "height": 22, "padding": "5px", "font-size": 9,
           "text-valign": "center", "text-wrap": "none"
       }},
-      { selector: 'node[type="asset"]', style: { "width": 34, "height": 34 }},
+      { selector: 'node[type="asset"]', style: { "width": 36, "height": 36 }},
       { selector: 'node[type="router"].core', style: {
           "border-width": 3, "border-color": "#212529"
       }},
       { selector: 'node[type="asset"][status="quiet"]', style: {
-          "opacity": 0.55, "border-style": "dashed", "border-width": 2, "border-color": "#adb5bd"
+          "opacity": 0.45
       }},
       { selector: "edge", style: {
           "width": 1, "line-color": "#ced4da", "curve-style": "bezier"
@@ -551,10 +548,16 @@
   function layoutSegment() {
     const cellW = 52;
     const cellH = 52;
-    // Сетевые устройства (шлюзы/коммутаторы сегмента) — первыми: инфраструктура сверху,
-    // конечные устройства ниже; в остальном порядок по IP
+    // Группировка по типу устройства (как в легенде), внутри типа — по IP
+    const roleOrder = [
+      "network", "ap", "server", "workstation", "printer",
+      "medical", "phone", "mobile", "camera", "other", "unknown"
+    ];
+    const rank = function (node) {
+      const index = roleOrder.indexOf(node.data("role"));
+      return index === -1 ? roleOrder.length : index;
+    };
     const assets = cy.nodes('[type="asset"]').sort(function (a, b) {
-      const rank = function (node) { return node.data("role") === "network" ? 0 : 1; };
       if (rank(a) !== rank(b)) return rank(a) - rank(b);
       return a.data("ip") < b.data("ip") ? -1 : 1;
     });
