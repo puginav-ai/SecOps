@@ -116,6 +116,24 @@ def derive_os_family(ports: Iterable[int], vendor: str = "") -> str:
     return ""
 
 
+OS_FAMILY_GENERIC = {"Windows (по портам)", "Linux/Unix (по портам)"}
+
+
+def better_os_family(current: str, new: str) -> str:
+    """Не даёт понизить конкретный дистрибутив/ОС до эвристики «(по портам)».
+
+    Конкретное значение точнее эвристики: Astra Linux не превращается в
+    «Linux/Unix (по портам)» при повторном пересчёте; эвристика заменяется точным.
+    """
+    if not new:
+        return current
+    if not current:
+        return new
+    if new in OS_FAMILY_GENERIC and current not in OS_FAMILY_GENERIC:
+        return current
+    return new
+
+
 def distro_from_services(services: Iterable[dict]) -> str:
     """Дистрибутив Linux из баннера SSH/HTTP-служб: «astra» → Astra Linux, «ubuntu» → Ubuntu.
 

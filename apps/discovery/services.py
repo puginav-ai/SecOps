@@ -16,7 +16,12 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.registry.models import Asset, AssetEvent, Segment
-from collector.classify import classify_role, derive_os_family, distro_from_services
+from collector.classify import (
+    better_os_family,
+    classify_role,
+    derive_os_family,
+    distro_from_services,
+)
 from collector.nmap import ObservedHost
 from collector.oui import vendor_for_mac
 from collector.window import in_scan_window
@@ -208,8 +213,10 @@ def _update_asset(
     asset.os_name = observed.os_name or asset.os_name
     # ОС для поиска: точная из SMB/RDP или SSH-баннера; иначе подсказка по портам/вендору
     if not asset.os_name:
-        os_family = distro_from_services(services) or derive_os_family(
-            ports or asset.ports, vendor or asset.mac_vendor
+        os_family = better_os_family(
+            asset.os_family,
+            distro_from_services(services)
+            or derive_os_family(ports or asset.ports, vendor or asset.mac_vendor),
         )
         if os_family and os_family != asset.os_family:
             changes["os_family"] = {"from": asset.os_family, "to": os_family}

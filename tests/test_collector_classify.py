@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from collector.classify import classify_role, derive_os_family, distro_from_services
+from collector.classify import (
+    better_os_family,
+    classify_role,
+    derive_os_family,
+    distro_from_services,
+)
 
 
 def test_network_vendor_wins():
@@ -92,6 +97,13 @@ def test_linux_distro_from_ssh_banner():
     assert distro_from_services([{"version": "10.2p1 Ubuntu 2ubuntu3.8"}]) == "Ubuntu"
     assert distro_from_services([{"version": "OpenSSH 8.7 (RED OS)"}]) == "RED OS"
     assert distro_from_services([{"version": "9.9"}]) == ""
+
+
+def test_os_family_does_not_downgrade_to_generic():
+    assert better_os_family("Astra Linux", "Linux/Unix (по портам)") == "Astra Linux"
+    assert better_os_family("Linux/Unix (по портам)", "Astra Linux") == "Astra Linux"
+    assert better_os_family("", "Windows (по портам)") == "Windows (по портам)"
+    assert better_os_family("Windows (по портам)", "Windows 10 Pro") == "Windows 10 Pro"
 
 
 def test_unknown_stays_empty():
