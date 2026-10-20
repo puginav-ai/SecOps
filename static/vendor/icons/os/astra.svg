@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <polygon points="32,4 37.3,18.7 52.9,19.2 40.6,28.8 44.9,43.8 32,35 19.1,43.8 23.4,28.8 11.1,19.2 26.7,18.7"
+           fill="#0079cb" stroke="#0079cb" stroke-width="6" stroke-linejoin="round"/>
+  <text x="32" y="59" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-size="13" font-weight="700" fill="#0079cb">Astra</text>
+</svg>

@@ -277,16 +277,19 @@ def test_os_variant_and_icon_legend(segment: Segment) -> None:
     nodes = {node["data"]["id"]: node["data"] for node in graph["nodes"]}
     assert nodes[f"asset:{workstation_win.pk}"]["os_variant"] == "windows"
 
-    titles = [
-        item["title"]
+    legend = {
+        item["title"]: item
         for item in mapdata.legend_os(
             [workstation_win, workstation_astra, workstation_redos, server_linux]
         )
-    ]
-    assert "АРМ · Windows" in titles
-    assert "АРМ · Astra Linux" in titles
-    assert "АРМ · RED OS" in titles
-    assert "сервер · Linux" in titles
+    }
+    assert "АРМ · Windows" in legend
+    assert "АРМ · Astra Linux" in legend
+    assert "АРМ · RED OS" in legend
+    assert "сервер · Linux" in legend
+    assert legend["АРМ · Astra Linux"]["image"] == "vendor/icons/os/astra.svg"
+    assert legend["АРМ · RED OS"]["image"] == "vendor/icons/os/redos.svg"
+    assert legend["АРМ · Windows"]["image"] == ""
 
 
 def test_segment_graph_links_assets_to_systems(segment: Segment) -> None:

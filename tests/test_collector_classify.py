@@ -123,6 +123,14 @@ def test_server_requires_real_signals():
     assert classify_role([25, 110, 143]) == "server"
 
 
+def test_workstation_odm_vendors():
+    assert (
+        classify_role([22, 111], vendor="Wistron Infocomm (Zhongshan) Corporation") == "workstation"
+    )
+    assert classify_role([22], vendor="Lengda Technology(Xiamen) Co.,Ltd.") == "workstation"
+    assert classify_role([22], vendor="Elitegroup Computer Systems Co.,Ltd.") == "workstation"
+
+
 def test_unknown_stays_empty():
     assert classify_role([]) == ""
     assert classify_role([], vendor="Неизвестный вендор", hostname="host-1") == ""

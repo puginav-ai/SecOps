@@ -81,6 +81,11 @@ WORKSTATION_VENDORS = (
     "aio lcd pc",
     "tpv",
     "acer",
+    # ODM-производители ноутбуков/ПК (Wistron, Lengda, Jehe, ECS): в этой сети — АРМ
+    "wistron",
+    "lengda",
+    "jehe",
+    "elitegroup",
 )
 NETWORK_VENDORS = (
     "mikrotik",

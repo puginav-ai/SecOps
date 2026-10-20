@@ -91,6 +91,12 @@ def os_variant(asset: Asset) -> str:
     return ""
 
 
+# Фирменные иконки ОС (звезда Astra, три квадрата РЕДОС) вместо глифа Bootstrap Icons
+OS_ICON_IMAGE: dict[tuple[str, str], str] = {
+    ("workstation", "astra"): "vendor/icons/os/astra.svg",
+    ("workstation", "redos"): "vendor/icons/os/redos.svg",
+}
+
 # Подписи и иконки ОС-вариантов (Bootstrap Icons, те же глифы, что в вендорных SVG)
 OS_ICON_LEGEND: dict[tuple[str, str], tuple[str, str]] = {
     ("server", "windows"): ("bi-server", "сервер · Windows"),
@@ -124,6 +130,7 @@ def legend_os(assets) -> list[dict]:
             "icon": OS_ICON_LEGEND[(role, variant)][0],
             "title": OS_ICON_LEGEND[(role, variant)][1],
             "color": ROLE_LEGEND[role][1],
+            "image": OS_ICON_IMAGE.get((role, variant), ""),
         }
         for role, variant in sorted(
             present, key=lambda item: (role_order[item[0]], OS_ICON_LEGEND[item][1])
