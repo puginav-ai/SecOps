@@ -145,7 +145,7 @@
             <span><i class="bi {{ item.icon }}" style="color:{{ item.color }}"></i> {{ item.title }}</span>
           {% endfor %}
           {% for item in legend_os %}
-            <span>{% if item.image %}<img src="{% static item.image %}" alt="" width="24" height="24" class="me-1" style="vertical-align:-6px">{% else %}<i class="bi {{ item.icon }}" style="color:{{ item.color }}"></i>{% endif %} {{ item.title }}</span>
+            <span>{% if item.image %}<img src="{% static item.image %}?v=2" alt="" width="24" height="24" class="me-1" style="vertical-align:-6px">{% else %}<i class="bi {{ item.icon }}" style="color:{{ item.color }}"></i>{% endif %} {{ item.title }}</span>
           {% endfor %}
           {% if "system" in graph_types %}
             <span><i class="bi bi-diagram-3" style="color:#ffc107"></i> ИС</span>
@@ -403,8 +403,8 @@
   // ОС-варианты АРМ/серверов: глиф разный, цвет роли сохраняется
   const osIcons = {
     "workstation:windows": "{% static 'vendor/icons/roles/workstation-windows.svg' %}",
-    "workstation:astra": "{% static 'vendor/icons/os/astra.svg' %}",
-    "workstation:redos": "{% static 'vendor/icons/os/redos.svg' %}",
+    "workstation:astra": "{% static 'vendor/icons/os/astra.svg' %}?v=2",
+    "workstation:redos": "{% static 'vendor/icons/os/redos.svg' %}?v=2",
     "workstation:ubuntu": "{% static 'vendor/icons/roles/workstation-ubuntu.svg' %}",
     "server:linux": "{% static 'vendor/icons/roles/server-linux.svg' %}",
     "server:astra": "{% static 'vendor/icons/roles/server-linux.svg' %}",
