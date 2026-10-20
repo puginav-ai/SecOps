@@ -467,6 +467,40 @@ def test_segment_xlsx_requires_segment(login, make_user) -> None:
     assert client.get("/registry/map/assets.xlsx").status_code == 404
 
 
+def test_overview_shows_secondary_links_for_router_without_primary_segment(
+    site: Site, segment: Segment
+) -> None:
+    primary = RouterDevice.objects.create(
+        host="10.0.0.1",
+        name="MT-Root",
+        addresses=[{"address": "10.70.1.1/24", "interface": "br", "network": "10.70.1.0/24"}],
+        last_seen_at=timezone.now(),
+    )
+    secondary = RouterDevice.objects.create(
+        host="10.0.0.2",
+        name="MT-Adm",
+        addresses=[{"address": "10.70.1.35/24", "interface": "br-mgmt", "network": "10.70.1.0/24"}],
+        last_seen_at=timezone.now(),
+    )
+
+    graph = mapdata.overview_graph()
+    secondary_edges = [edge for edge in graph["edges"] if edge.get("classes") == "secondary"]
+
+    assert len(secondary_edges) == 1
+    edge = secondary_edges[0]
+    assert edge["data"]["source"] == f"router:{secondary.pk}"
+    assert edge["data"]["target"] == f"segment:{segment.pk}"
+    assert edge["data"]["secondary"] is True
+    # основной шлюз остаётся единственным сплошным ребром
+    primary_edges = [
+        edge
+        for edge in graph["edges"]
+        if edge["data"].get("type") == "router-segment"
+        and edge["data"]["source"] == f"router:{primary.pk}"
+    ]
+    assert len(primary_edges) == 1
+
+
 def test_overview_graph_links_routers_by_neighbors(site: Site, segment: Segment) -> None:
     first = RouterDevice.objects.create(
         host="10.0.0.1",

@@ -349,6 +349,10 @@ def overview_graph(
         current = primary_links.get(link[1].pk)
         if current is None or ipaddress.ip_address(link[3]) < ipaddress.ip_address(current[3]):
             primary_links[link[1].pk] = link
+    primary_router_ids = {link[0].pk for link in primary_links.values()}
+    # Роутеры без «своего» сегмента (все их интерфейсы — не минимальный IP в подсети)
+    # иначе выглядели бы изолированными: показываем их связи пунктиром как дополнительные.
+    secondary_links = [link for link in router_links if link[0].pk not in primary_router_ids]
     votes: dict[int, dict[int, int]] = {}
     for router, segment, _interface, _ip in router_links:
         if segment.site_id:
@@ -428,6 +432,22 @@ def overview_graph(
                     "label": interface,
                     "type": "router-segment",
                 }
+            }
+        )
+    for router, segment, interface, _ip in secondary_links:
+        if router.pk not in visible_routers:
+            continue
+        edges.append(
+            {
+                "data": {
+                    "id": f"link-secondary:{router.pk}:{segment.pk}",
+                    "source": f"router:{router.pk}",
+                    "target": f"segment:{segment.pk}",
+                    "label": interface,
+                    "type": "router-segment",
+                    "secondary": True,
+                },
+                "classes": "secondary",
             }
         )
     if gateways:

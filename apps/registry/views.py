@@ -349,6 +349,7 @@ def network_map(request):
         "can_edit": module_access(request.user, "registry") == "rw",
         "roles": Asset.DeviceRole.choices,
         "os_choices": mapdata.OS_FILTER_CHOICES,
+        "graph_has_secondary": False,
         "miss_threshold": MISS_THRESHOLD,
         "filters": {
             key: (request.GET.get(key) or "").strip() for key in (*MAP_FILTER_KEYS, "sort")
@@ -395,6 +396,9 @@ def network_map(request):
         context["graph"] = graph
         context["graph_types"] = {node["data"]["type"] for node in graph["nodes"]}
         context["graph_edge_types"] = {edge["data"].get("type", "plain") for edge in graph["edges"]}
+        context["graph_has_secondary"] = any(
+            edge["data"].get("secondary") for edge in graph["edges"]
+        )
         context["routers_total"] = RouterDevice.objects.count()
         context["graph_has_core"] = any(node["data"].get("core") for node in graph["nodes"])
         context["find_query"] = find_query
