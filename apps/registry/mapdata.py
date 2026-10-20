@@ -533,6 +533,36 @@ def role_for_query(query: str) -> str:
     return ""
 
 
+OS_QUERY_WORDS = {
+    "linux",
+    "astra",
+    "astra linux",
+    "ubuntu",
+    "debian",
+    "red os",
+    "redos",
+    "centos",
+    "almalinux",
+    "rocky",
+    "rocky linux",
+    "routeros",
+}
+
+
+def is_os_query(query: str) -> bool:
+    """Похоже ли на запрос ОС: «astra», «windows», «windows 10», «server 2022».
+
+    Для таких запросов поиск по ОС идёт раньше имён: «astra» должно найти Astra Linux,
+    а не хосты с «astra» в имени; «astra-szi» остаётся поиском по имени (дефис/хвост).
+    """
+    value = (query or "").strip().lower()
+    if value in OS_QUERY_WORDS:
+        return True
+    if value.startswith("windows") and (len(value) == 7 or value[7] == " "):
+        return True
+    return bool(re.match(r"^server 20\d\d$", value))
+
+
 def _overlaps(cidr: str, network: ipaddress._BaseNetwork) -> bool:
     try:
         return ipaddress.ip_network(cidr, strict=False).overlaps(network)
@@ -587,6 +617,29 @@ def search_map(query: str) -> dict:
             "segment_counts": segment_counts,
             "segment_ids": [segment.pk for segment in segments],
         }
+
+    if is_os_query(raw):
+        # «astra», «windows 10»: ОС важнее совпадения по имени хоста
+        os_assets = list(
+            Asset.objects.select_related("segment")
+            .filter(Q(os_name__icontains=raw) | Q(os_family__icontains=raw))
+            .order_by("ip")[:20]
+        )
+        if os_assets:
+            ids = {asset.segment_id for asset in os_assets if asset.segment_id}
+            os_segments = list(Segment.objects.filter(pk__in=ids).order_by("cidr"))
+            return {
+                "query": raw,
+                "normalized": normalized,
+                "match": "os",
+                "role_code": "",
+                "role_title": "",
+                "total": len(os_assets),
+                "assets": os_assets,
+                "segments": os_segments,
+                "segment_counts": [],
+                "segment_ids": [segment.pk for segment in os_segments],
+            }
 
     if normalized:
         try:

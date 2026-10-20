@@ -7,7 +7,7 @@ from freezegun import freeze_time
 
 from apps.discovery import tasks
 from apps.discovery.models import ScanRun
-from apps.discovery.tests.samples import DETAIL_XML, SWEEP_XML
+from apps.discovery.tests.samples import DETAIL_XML, OS_PROBE_XML, SWEEP_XML
 from apps.registry.models import Asset, Segment, Site
 from collector.mikrotik import RouterData
 from collector.runner import ScanError
@@ -63,14 +63,15 @@ def test_scan_creates_run_assets_and_updates_segment(segment: Segment, monkeypat
 def test_manual_scan_is_deep_even_for_ping_profile(segment: Segment, monkeypatch) -> None:
     """Кнопка «Просканировать сейчас» наполняет паспорт, даже если профиль сегмента — ping."""
     assert segment.scan_profile == Segment.ScanProfile.PING
-    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, DETAIL_XML])
+    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, OS_PROBE_XML, DETAIL_XML])
 
     result = tasks.scan_segment(segment.pk, triggered_by=ScanRun.Trigger.MANUAL.value)
 
     assert result["status"] == "ok"
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert any("--top-ports" in args for args in calls)
-    assert "-sV" in calls[2]
+    assert "--script" in calls[2]  # SMB/RDP-зонд версии Windows
+    assert "-sV" in calls[3]
     assert Asset.objects.get(ip="10.60.1.10").ports == [22, 443]
 
 
@@ -78,12 +79,13 @@ def test_manual_scan_is_deep_even_for_ping_profile(segment: Segment, monkeypatch
 def test_top100_profile_enriches_ports_and_os(segment: Segment, monkeypatch) -> None:
     segment.scan_profile = Segment.ScanProfile.TOP100
     segment.save(update_fields=["scan_profile"])
-    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML])
+    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, OS_PROBE_XML])
 
     tasks.scan_segment(segment.pk)
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "--top-ports" in calls[1]
+    assert "--script" in calls[2]
     srv = Asset.objects.get(ip="10.60.1.10")
     assert (srv.ports, srv.os_name, srv.hostname) == ([22, 443], "Linux 5.4", "srv-demo")
 
@@ -93,12 +95,13 @@ def test_services_profile_runs_version_stage_on_open_ports(segment: Segment, mon
     """Профиль с версиями: быстрый top-100, затем -sV по объединению открытых портов."""
     segment.scan_profile = Segment.ScanProfile.TOP100_SERVICES
     segment.save(update_fields=["scan_profile"])
-    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, DETAIL_XML])
+    calls = patch_nmap(monkeypatch, [SWEEP_XML, DETAIL_XML, OS_PROBE_XML, DETAIL_XML])
 
     tasks.scan_segment(segment.pk)
 
-    assert len(calls) == 3
-    version_args = calls[2]
+    assert len(calls) == 4
+    assert "--script" in calls[2]
+    version_args = calls[3]
     assert "-sV" in version_args
     assert version_args[version_args.index("-p") + 1] == "22,443,3389"
 

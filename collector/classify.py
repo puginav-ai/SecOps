@@ -100,21 +100,45 @@ NETWORK_VENDORS = (
 
 
 def derive_os_family(ports: Iterable[int], vendor: str = "") -> str:
-    """Семейство ОС по портам/вендору, когда nmap -O не запускался (для поиска по ОС).
+    """Семейство ОС по портам/вендору, когда точная ОС не определена.
 
     Это подсказка, а не точная ОС — в подписи так и пишем «(по портам)»; точная ОС
-    появится, если для сегмента отдельно включить -O (SDD §5.10).
+    появится из SMB/RDP-зонда (Windows) или SSH-баннера (дистрибутив Linux) — SDD §5.10.
     """
     port_set = {int(port) for port in (ports or ()) if str(port).isdigit()}
     vendor_l = (vendor or "").lower()
-    if port_set & {8291, 830} or any(
-        marker in vendor_l for marker in ("routerboard", "mikrotik")
-    ):
+    if port_set & {8291, 830} or any(marker in vendor_l for marker in ("routerboard", "mikrotik")):
         return "RouterOS"
     if port_set & {135, 139, 445, 3389}:
         return "Windows (по портам)"
     if port_set & {22, 111}:
         return "Linux/Unix (по портам)"
+    return ""
+
+
+def distro_from_services(services: Iterable[dict]) -> str:
+    """Дистрибутив Linux из баннера SSH/HTTP-служб: «astra» → Astra Linux, «ubuntu» → Ubuntu.
+
+    OpenSSH в Astra отдаёт версию вида «7.4p1 Debian 10+deb9u6astra6» — по ней и опознаём
+    дистрибутив без доступа к хосту. RED OS обычно отдаёт чистый OpenSSH без суффикса,
+    поэтому для него нужен SSH-доступ (чтение /etc/os-release) — SDD §5.10.
+    """
+    text = " ".join(
+        f"{item.get('product', '')} {item.get('version', '')} {item.get('extrainfo', '')}"
+        for item in services or ()
+    ).lower()
+    for marker, name in (
+        ("astra", "Astra Linux"),
+        ("redos", "RED OS"),
+        ("red os", "RED OS"),
+        ("ubuntu", "Ubuntu"),
+        ("debian", "Debian"),
+        ("centos", "CentOS"),
+        ("almalinux", "AlmaLinux"),
+        ("rocky", "Rocky Linux"),
+    ):
+        if marker in text:
+            return name
     return ""
 
 

@@ -217,6 +217,30 @@ def test_device_passport_is_filled_from_network_signals(segment: Segment) -> Non
     assert server.fingerprint["services"][0]["product"] == "nginx"
 
 
+def test_ssh_banner_sets_linux_distro(segment: Segment) -> None:
+    services.apply_observations(
+        segment,
+        [
+            ObservedHost(
+                ip="10.60.1.40",
+                mac=MAC_A,
+                ports=(22,),
+                services=(
+                    {
+                        "port": 22,
+                        "service": "ssh",
+                        "product": "OpenSSH",
+                        "version": "7.4p1 Debian 10+deb9u6astra6",
+                        "extrainfo": "protocol 2.0",
+                    },
+                ),
+            )
+        ],
+    )
+
+    assert Asset.objects.get(ip="10.60.1.40").os_family == "Astra Linux"
+
+
 def test_passport_update_is_recorded_as_change(segment: Segment) -> None:
     services.apply_observations(segment, [host("10.60.1.30", mac=MAC_B)])
     services.apply_observations(segment, [host("10.60.1.30", mac=MAC_B, ports=(9100,))])
@@ -240,6 +264,7 @@ def test_is_scan_allowed_respects_flag_and_window(segment: Segment) -> None:
     assert services.is_scan_allowed(segment, now) == (False, "scan_disabled")
 
 
+@freeze_time("2026-10-12 09:30:00+03:00")  # понедельник: «[1]» — это вторник, вне окна
 def test_manual_scan_ignores_window_but_not_the_switch(segment: Segment) -> None:
     """Кнопка «просканировать сейчас» работает вне окна, но выключатель скана уважает."""
     now = timezone.localtime()

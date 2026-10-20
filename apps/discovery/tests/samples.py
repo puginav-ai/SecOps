@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 # Свип: два живых узла (один с MAC) и один недоступный
-SWEEP_XML = """<?xml version="1.0"?>
-<nmaprun>
+SWEEP_XML = """<?xml version="1.0"?><nmaprun>
   <host>
     <status state="up"/>
     <address addr="10.60.1.10" addrtype="ipv4"/>
@@ -70,3 +69,6 @@ WEIRD_XML = """<?xml version="1.0"?>
   </host>
 </nmaprun>
 """
+
+# SMB/RDP-зонд ОС: в тестах скана — пустой ответ (проверяется отдельным парсером)
+OS_PROBE_XML = '<?xml version="1.0"?><nmaprun></nmaprun>'

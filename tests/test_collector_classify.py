@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collector.classify import classify_role, derive_os_family
+from collector.classify import classify_role, derive_os_family, distro_from_services
 
 
 def test_network_vendor_wins():
@@ -82,6 +82,16 @@ def test_os_family_derived_from_ports_when_no_nmap_os():
     assert derive_os_family([8291]) == "RouterOS"
     assert derive_os_family([], vendor="Routerboard.com") == "RouterOS"
     assert derive_os_family([9100]) == ""
+
+
+def test_linux_distro_from_ssh_banner():
+    assert (
+        distro_from_services([{"product": "OpenSSH", "version": "7.4p1 Debian 10+deb9u6astra6"}])
+        == "Astra Linux"
+    )
+    assert distro_from_services([{"version": "10.2p1 Ubuntu 2ubuntu3.8"}]) == "Ubuntu"
+    assert distro_from_services([{"version": "OpenSSH 8.7 (RED OS)"}]) == "RED OS"
+    assert distro_from_services([{"version": "9.9"}]) == ""
 
 
 def test_unknown_stays_empty():

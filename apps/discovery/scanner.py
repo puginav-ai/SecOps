@@ -22,6 +22,7 @@ from collector.nmap import (
     chunk_cidr,
     parse_nmap_xml,
 )
+from collector.osfingerprint import build_os_probe_args, parse_os_probe_xml
 from collector.runner import run_nmap
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,19 @@ def collect_observations(segment: Segment, profile: str | None = None) -> list[O
         }
         # узел, «потерянный» при детальном скане, остаётся живым из свипа
         alive = [detailed.get(host.ip, host) for host in alive]
+
+        # Версия Windows без учётных данных: SMB/RDP-скрипты на уже открытых портах
+        os_targets = [host.ip for host in alive if set(host.ports) & {445, 3389}]
+        if os_targets:
+            detected = parse_os_probe_xml(run_nmap(build_os_probe_args(os_targets)))
+            alive = [
+                replace(
+                    host,
+                    os_name=detected.get(host.ip, {}).get("os") or host.os_name,
+                    hostname=host.hostname or detected.get(host.ip, {}).get("hostname", ""),
+                )
+                for host in alive
+            ]
 
     if profile == Segment.ScanProfile.TOP100_SERVICES and alive:
         alive = _with_service_versions(alive)

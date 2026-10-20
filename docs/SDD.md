@@ -641,6 +641,18 @@ Assurance pack отдельной сущностью не вводим (MVP): э
 > или вендор MikroTik/Routerboard; точная ОС — если для сегмента отдельно включить `-O`.
 > На стенде: 111 Windows, 69 Linux/Unix, 14 RouterOS. Результаты поиска — прокручиваемый
 > список, каждый актив с новой строки.
+>
+> Одиннадцатая правка (20.10.2026): определение ОС и версий без учётных данных.
+> Windows — SMB/RDP-скрипты nmap (`smb-os-discovery`, `rdp-ntlm-info`) на 445/3389:
+> «Windows 10 Pro 19045», «Windows Server 2022 Standard 20348»; SMB от Samba
+> («Windows 6.1» + lanmanager Samba) Windows'ом не считается — это Linux.
+> Linux-дистрибутив — SSH-баннер (`Debian-10+deb9u6astra6` → Astra Linux,
+> `2ubuntu3.8` → Ubuntu) и версии служб `-sV`. На стенде: 45 Astra Linux, 1 Ubuntu,
+> 34 Windows с версией (7, 10 1607/1703/1803/1909/21H1/22H2, Server 2019/2022);
+> RED OS не обнаружен. Поиск по ОС для запросов-названий ОС («astra», «windows 10»,
+> «server 2022») идёт раньше имён хостов; точная ОС недоступна там, где закрыты
+> SMB/SSH или баннер без суффикса дистрибутива — нужен SSH-доступ (`/etc/os-release`)
+> или SNMP sysDescr.
 
 ### 5.11. REST API (эскиз)
 

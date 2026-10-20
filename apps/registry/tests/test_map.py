@@ -178,6 +178,22 @@ def test_search_map_by_os(segment: Segment) -> None:
     assert [asset.ip for asset in found["assets"]] == ["10.70.1.40"]
 
 
+def test_search_os_query_prefers_os_over_hostname(segment: Segment) -> None:
+    make_asset(segment, "10.70.1.60", hostname="astra-szi", os_family="Astra Linux")
+    make_asset(segment, "10.70.1.61", hostname="astra-szi-2")
+    make_asset(segment, "10.70.1.62", os_name="Windows 10 Pro 19045")
+    make_asset(segment, "10.70.1.63", os_name="Windows Server 2022 Standard 20348")
+
+    found = mapdata.search_map("astra")
+    assert found["match"] == "os"
+    assert [asset.ip for asset in found["assets"]] == ["10.70.1.60"]
+
+    # с хвостом в имени — это уже поиск по имени, не по ОС
+    assert mapdata.search_map("astra-szi-2")["match"] == "name"
+    assert mapdata.search_map("windows 10")["match"] == "os"
+    assert mapdata.search_map("server 2022")["match"] == "os"
+
+
 def test_search_map_by_segment_name(segment: Segment) -> None:
     found = mapdata.search_map("Сегмент-Карт")
 
