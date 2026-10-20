@@ -8,10 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# nmap нужен контейнеру collector (профиль scan): sweep/порт-скан. В web/worker лежит
-# в том же образе — осознанно, ради единого образа (см. SDD §2.2).
+# nmap нужен контейнеру collector (профиль scan): sweep/порт-скан; iputils-ping — для
+# индикатора Ping в паспорте актива. В web/worker лежит в том же образе — осознанно,
+# ради единого образа (см. SDD §2.2).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nmap \
+    && apt-get install -y --no-install-recommends nmap iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-dev.txt ./

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Карта сети{% endblock %}
+{% block title %}{% if segment %}Сегмент {{ segment.name }}{% else %}Карта сети{% endif %}{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons.min.css' %}">
@@ -19,12 +19,16 @@
     padding: .25rem .5rem; border-radius: .375rem; font-size: .75rem; line-height: 1.3;
     background: rgba(33, 37, 41, .92); color: #fff;
   }
+  .btn-ping-ok { background: #146c43; border-color: #146c43; color: #fff; }
+  .btn-ping-ok:hover, .btn-ping-ok:focus { background: #0f5132; border-color: #0f5132; color: #fff; }
+  .btn-ping-fail { background: #f8d7da; border-color: #f5c2c7; color: #842029; }
+  .btn-ping-fail:hover, .btn-ping-fail:focus { background: #f1aeb5; border-color: #f1aeb5; color: #58151c; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-1">
-  <h1 class="h3 mb-0">Карта сети</h1>
+  <h1 class="h3 mb-0">{% if segment %}Сегмент {{ segment.name }}{% else %}Карта сети{% endif %}</h1>
   <div class="text-secondary small">данные — из discovery (ARP, DHCP, nmap, роутеры)</div>
 </div>
 <p class="text-secondary mb-3">
@@ -43,55 +47,7 @@
 {% if segment %}
   <form method="get" class="row g-2 align-items-end mb-3">
     <input type="hidden" name="segment" value="{{ segment.pk }}">
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-role">Тип</label>
-      <select class="form-select form-select-sm" id="f-role" name="role">
-        <option value="">любой</option>
-        {% for value, title in roles %}
-          <option value="{{ value }}" {% if filters.role == value %}selected{% endif %}>{{ title }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-vendor">Вендор</label>
-      <select class="form-select form-select-sm" id="f-vendor" name="vendor">
-        <option value="">любой</option>
-        {% for vendor in vendors %}
-          <option value="{{ vendor }}" {% if filters.vendor == vendor %}selected{% endif %}>{{ vendor|truncatechars:40 }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-status">Статус</label>
-      <select class="form-select form-select-sm" id="f-status" name="status">
-        <option value="">любой</option>
-        <option value="active" {% if filters.status == "active" %}selected{% endif %}>в сети</option>
-        <option value="quiet" {% if filters.status == "quiet" %}selected{% endif %}>молчит</option>
-      </select>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-system">ИС</label>
-      <select class="form-select form-select-sm" id="f-system" name="system">
-        <option value="">любая</option>
-        <option value="with" {% if filters.system == "with" %}selected{% endif %}>привязан к ИС</option>
-        <option value="without" {% if filters.system == "without" %}selected{% endif %}>без ИС</option>
-      </select>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-port">Порт</label>
-      <input class="form-control form-control-sm" style="width: 90px" id="f-port" name="port"
-             inputmode="numeric" value="{{ filters.port }}" placeholder="3389">
-    </div>
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-product">ПО</label>
-      <input class="form-control form-control-sm" style="width: 150px" id="f-product" name="product"
-             value="{{ filters.product }}" placeholder="nginx, OpenSSH…">
-    </div>
-    <div class="col-auto">
-      <label class="form-label small mb-1" for="f-q">Поиск</label>
-      <input class="form-control form-control-sm" style="width: 170px" id="f-q" name="q"
-             value="{{ filters.q }}" placeholder="IP, имя, MAC">
-    </div>
+    {% include "registry/_map_filters.html" with include_q=True %}
     <div class="col-auto">
       <button class="btn btn-primary btn-sm" type="submit">Фильтр</button>
       <a class="btn btn-outline-secondary btn-sm" href="?segment={{ segment.pk }}">Сбросить</a>
@@ -245,9 +201,14 @@
         <form method="get" class="d-flex gap-2" role="search">
           {% if site_id %}<input type="hidden" name="site" value="{{ site_id }}">{% endif %}
           {% if size_mode == "same" %}<input type="hidden" name="size" value="same">{% endif %}
+          {% for key, value in filters.items %}
+            {% if value and key != "q" and key != "sort" %}
+              <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endif %}
+          {% endfor %}
           <input class="form-control form-control-sm" style="width: 240px" type="search" name="find"
                  value="{{ find_query }}" aria-label="Поиск актива или сегмента"
-                 placeholder="IP или имя: 192,168,0,191">
+                 placeholder="IP, имя, ОС или сегмент">
           <button class="btn btn-primary btn-sm" type="submit">Найти</button>
           {% if find_query %}
             <a class="btn btn-outline-secondary btn-sm" href="{{ reset_find_url }}">Сбросить</a>
@@ -260,6 +221,29 @@
              href="{{ size_urls.same }}">Одинаковые</a>
         </div>
       </div>
+      <form method="get" class="row g-2 align-items-end mt-2">
+        {% if site_id %}<input type="hidden" name="site" value="{{ site_id }}">{% endif %}
+        {% if size_mode == "same" %}<input type="hidden" name="size" value="same">{% endif %}
+        {% if find_query %}<input type="hidden" name="find" value="{{ find_query }}">{% endif %}
+        {% include "registry/_map_filters.html" with include_q=False %}
+        <div class="col-auto">
+          <button class="btn btn-primary btn-sm" type="submit">Фильтр</button>
+          {% if filter_active %}
+            <a class="btn btn-outline-secondary btn-sm" href="{{ reset_filters_url }}">Сбросить</a>
+          {% endif %}
+        </div>
+      </form>
+      {% if filter_active %}
+        <div class="small mt-2" role="status">
+          Найдено активов: <span class="fw-semibold">{{ filter_total }}</span> ·
+          сегментов: <span class="fw-semibold">{{ filter_segment_count }}</span>.
+          {% if filter_total %}
+            Сегменты подсвечены на карте, карточки ниже — только совпавшие.
+          {% else %}
+            Ничего не найдено.
+          {% endif %}
+        </div>
+      {% endif %}
       {% if found %}
         <div class="small mt-2" role="status">
           {% if found.match == "role" %}
@@ -268,7 +252,7 @@
               <ul class="mb-0 ps-3 map-search-results">
                 {% for item in found.segment_counts %}
                   <li>
-                    <a href="?segment={{ item.segment.pk }}&amp;role={{ found.role_code }}">{{ item.segment.name }}</a>
+                    <a href="?segment={{ item.segment.pk }}&amp;role={{ found.role_code }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ item.segment.name }}</a>
                     — {{ item.count }}
                   </li>
                 {% endfor %}
@@ -287,7 +271,7 @@
               {% for a in found.assets %}
                 <li>
                   <span class="fw-semibold">{{ a.ip }}</span>{% if a.hostname %} · {{ a.hostname }}{% endif %}{% if found.match == "vendor" %} · {{ a.mac_vendor }}{% endif %}{% if found.match == "os" %} · {{ a.os_name|default:a.os_family }}{% endif %}
-                  → <a href="?segment={{ a.segment_id }}">{{ a.segment }}</a>
+                  → <a href="?segment={{ a.segment_id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ a.segment }}</a>
                 </li>
               {% endfor %}
             </ul>
@@ -304,7 +288,7 @@
         <div class="small text-secondary mt-2">
           Поиск: тип устройства (принтер, МФУ, АРМ, телефон, смартфон, точка доступа, коммутатор),
           IP в любом написании (192.168.0.191, 192,168,0,191 или фрагмент 191), имя,
-          вендор, ОС (windows, linux) или имя сегмента.
+          вендор, ОС (windows, астра, редос, linux) или имя сегмента.
         </div>
       {% endif %}
     </div>
@@ -343,7 +327,7 @@
   <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
     {% for s in segments %}
       <div class="col">
-        <a class="text-decoration-none" href="?segment={{ s.pk }}">
+        <a class="text-decoration-none" href="?segment={{ s.pk }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
           <div class="card shadow-sm h-100 {% if s.pk in found_segment_ids %}border border-2 border-warning{% endif %}"><div class="card-body py-2">
             <div class="fw-semibold">{{ s.name }}</div>
             <div class="text-secondary small">
@@ -354,7 +338,9 @@
         </a>
       </div>
     {% empty %}
-      <div class="col text-secondary">сегменты не заведены</div>
+      <div class="col text-secondary">
+        {% if filter_active %}под фильтры сегментов не найдено{% else %}сегменты не заведены{% endif %}
+      </div>
     {% endfor %}
   </div>
 {% endif %}
@@ -798,14 +784,22 @@
       ? roleTitles[data.role_manual] + " (ручная)"
       : (roleTitles[data.role] || "—") + (data.role !== "unknown" ? " (авто)" : "");
     const rows = [
-      ["IP", data.ip], ["Другие IP", (data.extra_ips || []).join(", ")], ["MAC", data.mac],
+      ["Другие IP", (data.extra_ips || []).join(", ")], ["MAC", data.mac],
       ["Вендор", data.vendor], ["Имя", data.hostname],
       ["Тип", role], ["ОС", data.os], ["Порты", ports], ["Службы / ПО", services],
       ["ИС", (data.systems || []).join(", ")], ["Последний отклик", data.last_seen],
       ["Статус", data.status === "active" ? "в сети" : "молчит"],
     ];
+    const pingButton = data.ping_url
+      ? ' <button type="button" class="btn btn-primary btn-sm js-ping" data-ping-url="' +
+        esc(data.ping_url) + '" title="Средний ICMP-ping с сервера консоли">Ping</button>' +
+        '<span class="visually-hidden" role="status" data-ping-live></span>'
+      : "";
+    const ipRow = '<tr><td class="text-secondary">IP</td><td><span class="d-inline-flex align-items-center gap-2 flex-wrap">' +
+      esc(data.ip) + pingButton + "</span></td></tr>";
     document.getElementById("details").innerHTML =
       '<h6 class="mb-3">' + esc(data.label) + "</h6><table class=\"table table-sm mb-0\">" +
+      ipRow +
       rows.filter(function (row) { return row[1]; }).map(function (row) {
         return '<tr><td class="text-secondary">' + row[0] + "</td><td>" + esc(row[1]) + "</td></tr>";
       }).join("") + "</table>" +
@@ -814,6 +808,44 @@
           " свои подсети (роутер/NAT). Сетевыми методами они не видны — нужен доступ к устройству" +
           " или данные заказчика.</div>"
         : "");
+  }
+
+  // Ping из паспорта актива: ответ отдаёт сервер консоли (ICMP из web-контейнера).
+  const detailsEl = document.getElementById("details");
+  if (detailsEl) {
+    detailsEl.addEventListener("click", function (event) {
+      const button = event.target.closest(".js-ping");
+      if (!button) { return; }
+      const live = button.parentElement.querySelector("[data-ping-live]");
+      const url = button.getAttribute("data-ping-url");
+      if (!url) { return; }
+      button.disabled = true;
+      button.className = "btn btn-primary btn-sm js-ping";
+      button.textContent = "Ping…";
+      if (live) { live.textContent = "Проверка ping…"; }
+      fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+        .then(function (response) { return response.ok ? response.json() : { ok: false }; })
+        .then(function (result) {
+          if (result.ok) {
+            button.className = "btn btn-ping-ok btn-sm js-ping";
+            button.textContent = Number(result.avg_ms).toFixed(1) + " мс";
+            if (live) { live.textContent = "Ping " + button.textContent; }
+          } else {
+            button.className = "btn btn-ping-fail btn-sm js-ping";
+            button.textContent = "Нет";
+            if (live) { live.textContent = "Нет ответа"; }
+          }
+        })
+        .catch(function () {
+          button.className = "btn btn-ping-fail btn-sm js-ping";
+          button.textContent = "Нет";
+          if (live) { live.textContent = "Нет ответа"; }
+        })
+        .finally(function () {
+          button.disabled = false;
+          button.title = "Повторить ping";
+        });
+    });
   }
 })();
 </script>

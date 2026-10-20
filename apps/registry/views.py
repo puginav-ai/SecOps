@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from datetime import timedelta
 
 from django.contrib import messages
 from django.db.models import Count, ProtectedError, Q
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.core.access import FULL_REGISTRY_ROLES, module_access, role_required, user_roles
 from apps.core.export import xlsx_response
@@ -247,6 +249,8 @@ ASSET_SORTS = {
 GRAPH_NODE_LIMIT = 400
 TABLE_ROW_LIMIT = 500
 XLSX_ROW_LIMIT = 5000
+MAP_FILTER_KEYS = ("role", "vendor", "os", "port", "product", "system", "status", "q")
+PING_BIN = "/usr/bin/ping"
 
 
 def _base_query(request) -> str:
@@ -276,10 +280,8 @@ def _overview_reset_url(request) -> str:
     return "?" + params.urlencode() if params else "?"
 
 
-def _map_assets(segment: Segment, params):
-    """Активы сегмента с фильтрами карты: роль, вендор, порт, продукт, ИС, статус, поиск."""
-    assets = mapdata.asset_queryset().filter(segment=segment)
-
+def _filter_assets(assets, params):
+    """Активы с фильтрами карты: роль, ОС, вендор, порт, продукт, ИС, статус, поиск."""
     role = (params.get("role") or "").strip()
     if role:
         # ручная роль главнее: фильтр учитывает и её, и авто-классификацию
@@ -305,12 +307,27 @@ def _map_assets(segment: Segment, params):
         assets = assets.filter(miss_count__lt=MISS_THRESHOLD)
     elif status == "quiet":
         assets = assets.filter(miss_count__gte=MISS_THRESHOLD)
+    os_value = (params.get("os") or "").strip()
+    if os_value:
+        # os_variant — та же нормализация, что у иконок и фильтра ОС на карте
+        matching_ids = [
+            asset.pk for asset in assets if (mapdata.os_variant(asset) or "none") == os_value
+        ]
+        assets = assets.filter(pk__in=matching_ids)
     query = (params.get("q") or "").strip()
     if query:
         assets = assets.filter(
-            Q(ip__icontains=query) | Q(hostname__icontains=query) | Q(mac__icontains=query)
+            Q(ip__icontains=query)
+            | Q(hostname__icontains=query)
+            | Q(mac__icontains=query)
+            | mapdata.os_query_q(query)
         )
     return assets
+
+
+def _map_assets(segment: Segment, params):
+    """Активы сегмента с фильтрами карты."""
+    return _filter_assets(mapdata.asset_queryset().filter(segment=segment), params)
 
 
 @role_required("registry")
@@ -331,21 +348,49 @@ def network_map(request):
         "segment": segment,
         "can_edit": module_access(request.user, "registry") == "rw",
         "roles": Asset.DeviceRole.choices,
+        "os_choices": mapdata.OS_FILTER_CHOICES,
         "miss_threshold": MISS_THRESHOLD,
         "filters": {
-            key: (request.GET.get(key) or "").strip()
-            for key in ("role", "vendor", "port", "product", "system", "status", "q", "sort")
+            key: (request.GET.get(key) or "").strip() for key in (*MAP_FILTER_KEYS, "sort")
         },
     }
 
     if segment is None:
         find_query = (request.GET.get("find") or "").strip()
         size_mode = "same" if request.GET.get("size") == "same" else "count"
+        filter_active = any(context["filters"][key] for key in MAP_FILTER_KEYS)
+        filter_total = 0
+        filter_segment_ids: list[int] = []
+        filter_query = ""
+        if filter_active:
+            # Фильтры обзора ищут активы по всем сегментам (или в пределах площадки):
+            # карточки сегментов ниже показывают только совпадения, на карте они подсвечены.
+            filter_assets = mapdata.asset_queryset()
+            if site_id:
+                filter_assets = filter_assets.filter(site_id=site_id)
+            filter_assets = _filter_assets(filter_assets, request.GET)
+            filter_total = filter_assets.count()
+            filter_segment_ids = list(
+                filter_assets.exclude(segment__isnull=True)
+                .order_by()
+                .values_list("segment_id", flat=True)
+                .distinct()
+            )
+            params = request.GET.copy()
+            for key in ("segment", "find", "site", "size", "sort"):
+                params.pop(key, None)
+            filter_query = params.urlencode()
+            reset_params = request.GET.copy()
+            for key in MAP_FILTER_KEYS:
+                reset_params.pop(key, None)
+            context["reset_filters_url"] = "?" + reset_params.urlencode() if reset_params else "?"
         found = mapdata.search_map(find_query) if find_query else None
+        highlight_ids = sorted(set(filter_segment_ids) | set(found["segment_ids"] if found else []))
         graph = mapdata.overview_graph(
             site_id,
             sized=size_mode == "count",
-            found_segment_ids=tuple(found["segment_ids"]) if found else (),
+            found_segment_ids=tuple(highlight_ids),
+            url_query=filter_query,
         )
         context["graph"] = graph
         context["graph_types"] = {node["data"]["type"] for node in graph["nodes"]}
@@ -354,10 +399,16 @@ def network_map(request):
         context["graph_has_core"] = any(node["data"].get("core") for node in graph["nodes"])
         context["find_query"] = find_query
         context["found"] = found
-        context["found_segment_ids"] = found["segment_ids"] if found else []
+        context["found_segment_ids"] = highlight_ids
+        context["filter_active"] = filter_active
+        context["filter_total"] = filter_total
+        context["filter_segment_count"] = len(filter_segment_ids)
+        context["filter_query"] = filter_query
         context["size_mode"] = size_mode
         context["size_urls"] = _overview_size_urls(request, size_mode)
         context["reset_find_url"] = _overview_reset_url(request)
+        if filter_active:
+            context["segments"] = context["segments"].filter(pk__in=filter_segment_ids)
         return render(request, "registry/map.html", context)
 
     assets = _map_assets(segment, request.GET)
@@ -399,6 +450,32 @@ def network_map(request):
         }
     )
     return render(request, "registry/map.html", context)
+
+
+@role_required("registry")
+@require_GET
+def asset_ping(request, pk: int):
+    """Средний ICMP-ping актива с хоста консоли (для индикатора в паспорте на карте).
+
+    shortcut: ping выполняется синхронно в web-воркере (до ~4 с); при частых проверках
+    вынести в Celery.
+    """
+    asset = get_object_or_404(Asset, pk=pk)
+    try:
+        # asset.ip — GenericIPAddressField, не пользовательская строка команды
+        result = subprocess.run(  # noqa: S603
+            [PING_BIN, "-c", "3", "-n", "-W", "1", "-w", "4", asset.ip],
+            capture_output=True,
+            text=True,
+            timeout=6,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return JsonResponse({"ok": False})
+    match = re.search(r"rtt [^=]*= [\d.]+/([\d.]+)/", result.stdout or "")
+    if result.returncode != 0 or match is None:
+        return JsonResponse({"ok": False})
+    return JsonResponse({"ok": True, "avg_ms": round(float(match.group(1)), 1)})
 
 
 @role_required("registry", "rw")

@@ -237,6 +237,7 @@ def overview_graph(
     *,
     sized: bool = True,
     found_segment_ids: tuple[int, ...] = (),
+    url_query: str = "",
 ) -> dict:
     """Граф обзора: площадки (контейнеры), внутри — роутеры и сегменты, плюс связи.
 
@@ -247,6 +248,7 @@ def overview_graph(
     """
     nodes: list[dict] = []
     edges: list[dict] = []
+    segment_suffix = f"&{url_query}" if url_query else ""
 
     segments = list(
         Segment.objects.select_related("site").annotate(
@@ -320,7 +322,7 @@ def overview_graph(
             "tile_w": tile_w,
             "tile_h": tile_h,
             "font_size": font_size,
-            "url": f"{reverse('registry:network_map')}?segment={segment.pk}",
+            "url": f"{reverse('registry:network_map')}?segment={segment.pk}{segment_suffix}",
         }
         if segment.pk in found_segment_ids:
             data["found"] = True
@@ -448,7 +450,9 @@ def overview_graph(
                 data["vendor"] = asset.mac_vendor
                 if asset.segment_id:
                     data["summary"] += f" · {asset.segment.name}"
-                    data["url"] = f"{reverse('registry:network_map')}?segment={asset.segment_id}"
+                    data["url"] = (
+                        f"{reverse('registry:network_map')}?segment={asset.segment_id}{segment_suffix}"
+                    )
             nodes.append({"data": data})
             is_active = any(meta["routers"].values())
             edges.append(
@@ -534,6 +538,7 @@ def segment_graph(segment: Segment, assets: list[Asset]) -> dict:
                     "status": "active" if asset.miss_count < MISS_THRESHOLD else "quiet",
                     "last_seen": asset.last_seen_at.strftime("%d.%m.%Y %H:%M"),
                     "systems": [system.name for system in systems],
+                    "ping_url": reverse("registry:asset_ping", args=[asset.pk]),
                 }
             }
         )
@@ -636,14 +641,53 @@ OS_QUERY_WORDS = {
     "routeros",
 }
 
+# Русские названия ОС в поиске: «астра» должна находить Astra Linux, «редос» — RED OS.
+OS_QUERY_ALIASES = {
+    "астра": "astra",
+    "астра линукс": "astra",
+    "редос": "red os",
+    "ред ос": "red os",
+    "убунту": "ubuntu",
+    "виндовс": "windows",
+    "винда": "windows",
+    "линукс": "linux",
+    "дебиан": "debian",
+}
+
+# Варианты фильтра по ОС — совпадают с иконками и легендой карты.
+OS_FILTER_CHOICES = (
+    ("windows", "Windows"),
+    ("astra", "Astra Linux"),
+    ("redos", "RED OS"),
+    ("ubuntu", "Ubuntu"),
+    ("linux", "другая Linux"),
+    ("none", "не определена"),
+)
+
+
+def normalize_os_query(query: str) -> str:
+    """Приводит русское название ОС к латинскому варианту для поиска по полям."""
+    value = (query or "").strip().lower().replace("ё", "е")
+    return OS_QUERY_ALIASES.get(value, value)
+
+
+def os_query_q(query: str) -> Q:
+    """Q для поиска по ОС с учётом русских названий и варианта «REDOS» без пробела."""
+    value = normalize_os_query(query)
+    condition = Q(os_name__icontains=value) | Q(os_family__icontains=value)
+    if value == "red os":
+        condition |= Q(os_name__icontains="redos") | Q(os_family__icontains="redos")
+    return condition
+
 
 def is_os_query(query: str) -> bool:
     """Похоже ли на запрос ОС: «astra», «windows», «windows 10», «server 2022».
 
     Для таких запросов поиск по ОС идёт раньше имён: «astra» должно найти Astra Linux,
     а не хосты с «astra» в имени; «astra-szi» остаётся поиском по имени (дефис/хвост).
+    Русские названия («астра», «редос») приводятся к латинским до проверки.
     """
-    value = (query or "").strip().lower()
+    value = normalize_os_query(query)
     if value in OS_QUERY_WORDS:
         return True
     if value.startswith("windows") and (len(value) == 7 or value[7] == " "):
@@ -707,25 +751,28 @@ def search_map(query: str) -> dict:
         }
 
     if is_os_query(raw):
-        # «astra», «windows 10»: ОС важнее совпадения по имени хоста
-        os_assets = list(
-            Asset.objects.select_related("segment")
-            .filter(Q(os_name__icontains=raw) | Q(os_family__icontains=raw))
-            .order_by("ip")[:20]
+        # «astra», «астра», «windows 10»: ОС важнее совпадения по имени хоста
+        matched_os = list(
+            Asset.objects.select_related("segment").filter(os_query_q(raw)).order_by("ip")
         )
-        if os_assets:
-            ids = {asset.segment_id for asset in os_assets if asset.segment_id}
-            os_segments = list(Segment.objects.filter(pk__in=ids).order_by("cidr"))
+        if matched_os:
+            counts: dict[int, int] = {}
+            for asset in matched_os:
+                if asset.segment_id:
+                    counts[asset.segment_id] = counts.get(asset.segment_id, 0) + 1
+            os_segments = list(Segment.objects.filter(pk__in=counts).order_by("cidr"))
             return {
                 "query": raw,
                 "normalized": normalized,
                 "match": "os",
                 "role_code": "",
                 "role_title": "",
-                "total": len(os_assets),
-                "assets": os_assets,
+                "total": len(matched_os),
+                "assets": matched_os[:20],
                 "segments": os_segments,
-                "segment_counts": [],
+                "segment_counts": [
+                    {"segment": segment, "count": counts[segment.pk]} for segment in os_segments
+                ],
                 "segment_ids": [segment.pk for segment in os_segments],
             }
 
@@ -779,11 +826,9 @@ def search_map(query: str) -> dict:
             if assets:
                 match = "vendor"
         if not assets:
-            # ОС из nmap: «windows», «linux», «windows 10»
+            # ОС из nmap: «windows», «linux», «windows 10», «астра», «редос»
             assets = list(
-                Asset.objects.select_related("segment")
-                .filter(Q(os_name__icontains=raw) | Q(os_family__icontains=raw))
-                .order_by("ip")[:20]
+                Asset.objects.select_related("segment").filter(os_query_q(raw)).order_by("ip")[:20]
             )
             if assets:
                 match = "os"

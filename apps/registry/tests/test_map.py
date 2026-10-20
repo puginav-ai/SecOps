@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from django.utils import timezone
@@ -186,6 +187,21 @@ def test_search_map_by_os(segment: Segment) -> None:
     assert [asset.ip for asset in found["assets"]] == ["10.70.1.40"]
 
 
+def test_search_map_by_os_cyrillic(segment: Segment) -> None:
+    astra = make_asset(segment, "10.70.1.41", os_family="Astra Linux")
+    redos = make_asset(segment, "10.70.1.42", os_name="RED OS MUROM 7.3.6")
+
+    found = mapdata.search_map("астра")
+    assert found["match"] == "os"
+    assert found["total"] == 1
+    assert [asset.pk for asset in found["assets"]] == [astra.pk]
+
+    found = mapdata.search_map("редос")
+    assert found["match"] == "os"
+    assert found["total"] == 1
+    assert [asset.pk for asset in found["assets"]] == [redos.pk]
+
+
 def test_search_os_query_prefers_os_over_hostname(segment: Segment) -> None:
     make_asset(segment, "10.70.1.60", hostname="astra-szi", os_family="Astra Linux")
     make_asset(segment, "10.70.1.61", hostname="astra-szi-2")
@@ -335,6 +351,91 @@ def test_map_filters_by_role_vendor_and_status(login, make_user, segment: Segmen
     Asset.objects.filter(ip="10.70.1.21").update(miss_count=3)
     response = client.get(f"/registry/map/?segment={segment.pk}&status=quiet")
     assert [asset.ip for asset in response.context["assets"]] == ["10.70.1.21"]
+
+
+def test_map_filters_by_os_and_searches_cyrillic_os(login, make_user, segment: Segment) -> None:
+    astra = make_asset(segment, "10.70.1.41", os_family="Astra Linux")
+    redos = make_asset(segment, "10.70.1.42", os_family="RED OS")
+    make_asset(segment, "10.70.1.43", os_family="Windows")
+    client = login(make_user("map-os-filter", role="ib_officer"))
+
+    response = client.get(f"/registry/map/?segment={segment.pk}&os=astra")
+    assert [asset.pk for asset in response.context["assets"]] == [astra.pk]
+
+    response = client.get(f"/registry/map/?segment={segment.pk}&q=астра")
+    assert [asset.pk for asset in response.context["assets"]] == [astra.pk]
+
+    response = client.get(f"/registry/map/?segment={segment.pk}&q=редос")
+    assert [asset.pk for asset in response.context["assets"]] == [redos.pk]
+
+
+def test_overview_filters_by_os_and_keeps_filter_on_segment_link(
+    login, make_user, site: Site, segment: Segment
+) -> None:
+    other = Segment.objects.create(
+        site=site, name="Сегмент-Обзор-2", cidr="10.71.1.0/24", scan_enabled=True
+    )
+    make_asset(segment, "10.70.1.41", os_family="Astra Linux")
+    make_asset(other, "10.71.1.41", os_family="RED OS")
+    client = login(make_user("map-overview-os", role="ib_officer"))
+
+    response = client.get("/registry/map/?os=astra")
+
+    assert response.context["filter_active"] is True
+    assert response.context["filter_total"] == 1
+    assert response.context["filter_segment_count"] == 1
+    assert [item.pk for item in response.context["segments"]] == [segment.pk]
+    assert response.context["found_segment_ids"] == [segment.pk]
+    nodes = {node["data"]["id"]: node for node in response.context["graph"]["nodes"]}
+    assert nodes[f"segment:{segment.pk}"]["data"]["found"] is True
+    assert "found" not in nodes[f"segment:{other.pk}"].get("classes", "")
+    assert nodes[f"segment:{segment.pk}"]["data"]["url"].endswith("&os=astra")
+    assert f"?segment={segment.pk}&amp;os=astra" in response.content.decode()
+
+
+def test_segment_page_title_matches_segment(login, make_user, segment: Segment) -> None:
+    client = login(make_user("map-title", role="ib_officer"))
+
+    response = client.get(f"/registry/map/?segment={segment.pk}")
+
+    assert f"<title>Сегмент {segment.name}</title>" in response.content.decode()
+    assert f">Сегмент {segment.name}</h1>" in response.content.decode()
+
+
+def test_asset_ping_returns_average(
+    login, make_user, segment: Segment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asset = make_asset(segment, "10.70.1.41")
+    client = login(make_user("map-ping-ok", role="ib_officer"))
+    output = (
+        "PING 10.70.1.41 (10.70.1.41) 56(84) bytes of data.\n"
+        "rtt min/avg/max/mdev = 0.100/0.500/0.900/0.100 ms\n"
+    )
+    monkeypatch.setattr(
+        "apps.registry.views.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=output),
+    )
+
+    response = client.get(f"/registry/assets/{asset.pk}/ping/")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "avg_ms": 0.5}
+
+
+def test_asset_ping_reports_no_reply(
+    login, make_user, segment: Segment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asset = make_asset(segment, "10.70.1.42")
+    client = login(make_user("map-ping-fail", role="ib_officer"))
+    monkeypatch.setattr(
+        "apps.registry.views.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+
+    response = client.get(f"/registry/assets/{asset.pk}/ping/")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": False}
 
 
 def test_map_sorting_by_ip(login, make_user, segment: Segment) -> None:

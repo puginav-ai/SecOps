@@ -1,0 +1,60 @@
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-role">Тип</label>
+      <select class="form-select form-select-sm" id="f-role" name="role">
+        <option value="">любой</option>
+        {% for value, title in roles %}
+          <option value="{{ value }}" {% if filters.role == value %}selected{% endif %}>{{ title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-os">ОС</label>
+      <select class="form-select form-select-sm" id="f-os" name="os">
+        <option value="">любая</option>
+        {% for value, title in os_choices %}
+          <option value="{{ value }}" {% if filters.os == value %}selected{% endif %}>{{ title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-vendor">Вендор</label>
+      <select class="form-select form-select-sm" id="f-vendor" name="vendor">
+        <option value="">любой</option>
+        {% for vendor in vendors %}
+          <option value="{{ vendor }}" {% if filters.vendor == vendor %}selected{% endif %}>{{ vendor|truncatechars:40 }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-status">Статус</label>
+      <select class="form-select form-select-sm" id="f-status" name="status">
+        <option value="">любой</option>
+        <option value="active" {% if filters.status == "active" %}selected{% endif %}>в сети</option>
+        <option value="quiet" {% if filters.status == "quiet" %}selected{% endif %}>молчит</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-system">ИС</label>
+      <select class="form-select form-select-sm" id="f-system" name="system">
+        <option value="">любая</option>
+        <option value="with" {% if filters.system == "with" %}selected{% endif %}>привязан к ИС</option>
+        <option value="without" {% if filters.system == "without" %}selected{% endif %}>без ИС</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-port">Порт</label>
+      <input class="form-control form-control-sm" style="width: 90px" id="f-port" name="port"
+             inputmode="numeric" value="{{ filters.port }}" placeholder="3389">
+    </div>
+    <div class="col-auto">
+      <label class="form-label small mb-1" for="f-product">ПО</label>
+      <input class="form-control form-control-sm" style="width: 150px" id="f-product" name="product"
+             value="{{ filters.product }}" placeholder="nginx, OpenSSH…">
+    </div>
+    {% if include_q %}
+      <div class="col-auto">
+        <label class="form-label small mb-1" for="f-q">Поиск</label>
+        <input class="form-control form-control-sm" style="width: 170px" id="f-q" name="q"
+               value="{{ filters.q }}" placeholder="IP, имя, MAC, ОС">
+      </div>
+    {% endif %}
