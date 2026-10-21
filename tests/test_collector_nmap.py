@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from apps.discovery.tests.samples import DETAIL_XML, SWEEP_XML, WEIRD_XML
 from collector.nmap import (
     HOST_TIMEOUT,
     MAX_RATE,
+    PRINTER_SCAN_EXCLUDE,
     TOP_PORTS,
     VERSION_PORTS_TIMEOUT,
     build_service_args,
@@ -13,6 +16,7 @@ from collector.nmap import (
     build_version_args,
     chunk_cidr,
     parse_nmap_xml,
+    version_ports,
 )
 
 
@@ -78,6 +82,7 @@ def test_service_args_respect_scan_budget():
     assert "--top-ports" in args and TOP_PORTS in args
     assert "--host-timeout" in args and HOST_TIMEOUT in args
     assert "--max-rate" in args and MAX_RATE in args
+    assert args[args.index("--exclude-ports") + 1] == PRINTER_SCAN_EXCLUDE
     assert args[-2:] == ["10.60.1.10", "10.60.1.11"]
 
 
@@ -90,3 +95,18 @@ def test_version_args_target_only_open_ports():
     assert args[args.index("-p") + 1] == "22,443"
     assert VERSION_PORTS_TIMEOUT in args
     assert args[-2:] == ["10.60.1.10", "10.60.1.11"]
+
+
+def test_version_ports_exclude_printer_payload_ports():
+    assert version_ports([22, 515, 631, 443, 9100, 9107, 9108]) == [22, 443, 9108]
+
+
+def test_version_args_filter_printer_ports():
+    args = build_version_args(["10.60.1.10"], [22, 515, 631, 9100, 443])
+
+    assert args[args.index("-p") + 1] == "22,443"
+
+
+def test_version_args_refuses_only_printer_ports():
+    with pytest.raises(ValueError, match="no safe ports"):
+        build_version_args(["10.60.1.10"], [515, 9100])

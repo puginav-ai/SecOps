@@ -21,6 +21,7 @@ from collector.nmap import (
     build_version_args,
     chunk_cidr,
     parse_nmap_xml,
+    version_ports,
 )
 from collector.osfingerprint import build_os_probe_args, parse_os_probe_xml
 from collector.runner import run_nmap
@@ -139,7 +140,10 @@ def _with_service_versions(hosts: list[ObservedHost]) -> list[ObservedHost]:
     versioned: dict[str, ObservedHost] = {}
     for start in range(0, len(ordered_ips), VERSION_BATCH_SIZE):
         batch = ordered_ips[start : start + VERSION_BATCH_SIZE]
-        ports = sorted({port for ip in batch for port in ported[ip]})
+        ports = version_ports({port for ip in batch for port in ported[ip]})
+        if not ports:
+            # В батче только принтеры/raw-порты: версии не запрашиваем, чтобы не печатать.
+            continue
         for host in parse_nmap_xml(run_nmap(build_version_args(batch, ports))):
             versioned[host.ip] = host
     return [

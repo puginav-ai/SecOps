@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Iterable
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
@@ -16,6 +17,18 @@ VERSION_PORTS_TIMEOUT = "90s"  # вторая ступень (-sV) — по уз
 MAX_RATE = "300"  # pps: глобальный лимит на весь запуск, а не на хост
 TOP_PORTS = "100"
 CHUNK_PREFIX = 24
+
+# Порты, на которые нельзя отправлять payload при -sV:
+# 515 — nmap LPDString-проба (\x01default\n) печатается Canon как задание;
+# 9100-9107 — raw/PJL (nmap сам исключает их, но фиксируем явно);
+# 631 — IPP/HTTP-пробы, чтобы не тревожить печать.
+VERSION_UNSAFE_PORTS = frozenset({515, 631, *range(9100, 9108)})
+PRINTER_SCAN_EXCLUDE = "515,631,9100-9107"
+
+
+def version_ports(ports: Iterable[int]) -> list[int]:
+    """Порты, безопасные для определения версий: без LPD/raw-печати/IPP."""
+    return sorted({int(port) for port in ports if int(port) not in VERSION_UNSAFE_PORTS})
 
 
 @dataclass(frozen=True)
@@ -129,6 +142,8 @@ def build_service_args(targets: list[str]) -> list[str]:
         HOST_TIMEOUT,
         "--max-rate",
         MAX_RATE,
+        "--exclude-ports",
+        PRINTER_SCAN_EXCLUDE,
         *targets,
     ]
 
@@ -136,10 +151,14 @@ def build_service_args(targets: list[str]) -> list[str]:
 def build_version_args(targets: list[str], ports: list[int]) -> list[str]:
     """Определение версий служб — вторая ступень профиля «top-100 + версии».
 
-    Только по уже найденным открытым портам: -sV по всем 100 портам не укладывается
-    в host-timeout на хостах с «filtered» портами, и nmap пропускал их целиком
-    («Skipping host due to host timeout» — проверено на живом сегменте).
+    Только по уже найденным безопасным открытым портам: -sV по всем 100 портам не
+    укладывается в host-timeout на хостах с «filtered» портами, и nmap пропускал их
+    целиком («Skipping host due to host timeout» — проверено на живом сегменте).
+    Печатные порты отфильтровываются: LPD-проба nmap печатается на МФУ как мусор.
     """
+    safe_ports = version_ports(ports)
+    if not safe_ports:
+        raise ValueError("no safe ports for version scan")
     return [
         "nmap",
         "-n",
@@ -149,7 +168,7 @@ def build_version_args(targets: list[str], ports: list[int]) -> list[str]:
         "--script",
         "banner,http-title",
         "-p",
-        ",".join(str(port) for port in ports),
+        ",".join(str(port) for port in safe_ports),
         "--host-timeout",
         VERSION_PORTS_TIMEOUT,
         "--max-rate",
